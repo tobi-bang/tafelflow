@@ -1,0 +1,5 @@
+{
+  "name": "TafelFlow",
+  "description": "Interaktive digitale Tafel für Schulen mit Echtzeit-Zusammenarbeit, Brainstorming, Umfragen und Wortwolken.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

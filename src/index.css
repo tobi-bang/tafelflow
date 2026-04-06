@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+.sticky-note {
+  @apply shadow-lg transition-transform hover:scale-105 active:scale-95;
+}
+
+.board-canvas {
+  @apply touch-none select-none;
+}
