@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { rowToSession } from '../lib/dbMap';
-import type { Session } from '../types';
+import type { Session, SessionPermissions } from '../types';
 import {
   Settings,
   Presentation,
@@ -38,6 +38,25 @@ import Polls from '../components/Polls';
 import WordCloud from '../components/WordCloud';
 
 type Tab = 'board' | 'brainstorming' | 'polls' | 'wordcloud';
+
+const ALL_TABS: Tab[] = ['board', 'brainstorming', 'polls', 'wordcloud'];
+
+/** SuS sehen nur Bereiche, die in den Sitzungseinstellungen freigeschaltet sind. */
+function visibleTabsForStudent(p: SessionPermissions): Tab[] {
+  const tabs: Tab[] = [];
+  if (p.drawBoard) tabs.push('board');
+  if (p.addSticky || p.moveSticky || p.organizeBrainstorm) tabs.push('brainstorming');
+  if (p.answerPoll) tabs.push('polls');
+  if (p.submitWord) tabs.push('wordcloud');
+  return tabs;
+}
+
+const TAB_META: Record<Tab, { label: string; icon: React.ReactNode }> = {
+  board: { label: 'Tafel', icon: <Presentation className="w-6 h-6" /> },
+  brainstorming: { label: 'Ideen', icon: <ClipboardList className="w-6 h-6" /> },
+  polls: { label: 'Umfrage', icon: <BarChart3 className="w-6 h-6" /> },
+  wordcloud: { label: 'Wortwolke', icon: <Cloud className="w-6 h-6" /> },
+};
 
 export default function SessionView() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -208,6 +227,23 @@ export default function SessionView() {
     }
   };
 
+  const participantTabs = useMemo(() => {
+    if (!session) return ALL_TABS;
+    if (isTeacher) return ALL_TABS;
+    return visibleTabsForStudent(session.permissions);
+  }, [session, isTeacher]);
+
+  const showSideNav = Boolean(session && (isTeacher || participantTabs.length > 1));
+
+  useEffect(() => {
+    if (!session || isTeacher) return;
+    const tabs = visibleTabsForStudent(session.permissions);
+    if (tabs.length === 0) return;
+    if (!tabs.includes(activeTab)) {
+      setActiveTab(tabs[0]);
+    }
+  }, [session, isTeacher, activeTab]);
+
   if (!session) return null;
 
   const joinPath = `/join/${session.room_code}`;
@@ -286,37 +322,33 @@ export default function SessionView() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <nav className="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-6 gap-6 shrink-0">
-          <NavIcon
-            active={activeTab === 'board'}
-            onClick={() => setActiveTab('board')}
-            icon={<Presentation className="w-6 h-6" />}
-            label="Tafel"
-          />
-          <NavIcon
-            active={activeTab === 'brainstorming'}
-            onClick={() => setActiveTab('brainstorming')}
-            icon={<ClipboardList className="w-6 h-6" />}
-            label="Ideen"
-          />
-          <NavIcon
-            active={activeTab === 'polls'}
-            onClick={() => setActiveTab('polls')}
-            icon={<BarChart3 className="w-6 h-6" />}
-            label="Umfrage"
-          />
-          <NavIcon
-            active={activeTab === 'wordcloud'}
-            onClick={() => setActiveTab('wordcloud')}
-            icon={<Cloud className="w-6 h-6" />}
-            label="Wortwolke"
-          />
-        </nav>
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {showSideNav && (
+          <nav className="w-[4.5rem] sm:w-20 bg-white border-r border-slate-200 flex flex-col items-center py-4 sm:py-6 gap-4 sm:gap-6 shrink-0 overflow-y-auto">
+            {(isTeacher ? ALL_TABS : participantTabs).map((tab) => (
+              <NavIcon
+                key={tab}
+                active={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                icon={TAB_META[tab].icon}
+                label={TAB_META[tab].label}
+              />
+            ))}
+          </nav>
+        )}
 
-        <main className="flex-1 relative overflow-hidden bg-slate-100" ref={boardRef}>
+        <main className="flex-1 relative overflow-hidden bg-slate-100 min-w-0" ref={boardRef}>
+          {!isTeacher && participantTabs.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-slate-600 z-10 bg-slate-50">
+              <p className="font-semibold text-slate-800 text-lg">Für dich ist gerade nichts freigeschaltet</p>
+              <p className="text-sm mt-3 max-w-sm">
+                Die Lehrkraft kann unter Sitzungseinstellungen bei <strong>Nutzung für SuS</strong> Tafel, Ideen,
+                Umfrage oder Wortwolke aktivieren.
+              </p>
+            </div>
+          )}
           <AnimatePresence mode="wait">
-            {activeTab === 'board' && (
+            {activeTab === 'board' && participantTabs.includes('board') && (
               <motion.div
                 key="board"
                 initial={{ opacity: 0 }}
@@ -332,7 +364,7 @@ export default function SessionView() {
                 />
               </motion.div>
             )}
-            {activeTab === 'brainstorming' && (
+            {activeTab === 'brainstorming' && participantTabs.includes('brainstorming') && (
               <motion.div
                 key="brainstorming"
                 initial={{ opacity: 0 }}
@@ -348,7 +380,7 @@ export default function SessionView() {
                 />
               </motion.div>
             )}
-            {activeTab === 'polls' && (
+            {activeTab === 'polls' && participantTabs.includes('polls') && (
               <motion.div
                 key="polls"
                 initial={{ opacity: 0 }}
@@ -364,7 +396,7 @@ export default function SessionView() {
                 />
               </motion.div>
             )}
-            {activeTab === 'wordcloud' && (
+            {activeTab === 'wordcloud' && participantTabs.includes('wordcloud') && (
               <motion.div
                 key="wordcloud"
                 initial={{ opacity: 0 }}
@@ -549,7 +581,11 @@ export default function SessionView() {
             </section>
 
             <section>
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Berechtigungen für SuS</h3>
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">Nutzung für SuS</h3>
+              <p className="text-xs text-slate-500 mb-4">
+                Schülerinnen und Schüler sehen auf dem Smartphone nur die Bereiche, die hier eingeschaltet sind –
+                weniger Ablenkung, klarere Bedienung.
+              </p>
               <div className="grid grid-cols-1 gap-3">
                 <PermissionToggle
                   label="Tafel zeichnen"
