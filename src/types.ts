@@ -9,6 +9,10 @@ export interface SessionPermissions {
   organizeBrainstorm: boolean;
   answerPoll: boolean;
   submitWord: boolean;
+  /** Live-Abstimmung (lokaler Demo-State) */
+  livePoll: boolean;
+  /** Peer-Feedback (lokaler Demo-State) */
+  peerFeedback: boolean;
 }
 
 export interface Session {

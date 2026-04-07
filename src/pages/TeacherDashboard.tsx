@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase, isSupabaseConfigured, isLocalDemo } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { rowToSession } from '../lib/dbMap';
 import type { Session } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -52,25 +52,26 @@ export default function TeacherDashboard() {
       try {
         const { data: { user: u } } = await supabase.auth.getUser();
         if (cancelled || !u) return;
+        const uid = u.id;
         const ok = await requireTeacher();
         if (!ok) {
           navigate('/login', { replace: true });
           return;
         }
         setAuthReady(true);
-        await loadSessions(u.id);
+        await loadSessions(uid);
 
         ch = supabase
-          .channel(`teacher-dash-${u.id}`)
+          .channel(`teacher-dash-${uid}`)
           .on(
             'postgres_changes',
             {
               event: '*',
               schema: 'public',
               table: 'session_members',
-              filter: `user_id=eq.${u.id}`,
+              filter: `user_id=eq.${uid}`,
             },
-            () => loadSessions(u.id)
+            () => loadSessions(uid)
           )
           .subscribe();
       } catch (e) {
@@ -83,12 +84,12 @@ export default function TeacherDashboard() {
       cancelled = true;
       if (ch) supabase.removeChannel(ch);
     };
-  }, [loadSessions]);
+  }, [loadSessions, navigate]);
 
   const createSession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
-      alert('Bitte VITE_LOCAL_DEMO=true oder Supabase-Keys in .env.local setzen und den Server neu starten.');
+      alert('Bitte VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env.local setzen und den Server neu starten.');
       return;
     }
     if (!newSessionName.trim() || newPin.length < 4) {
@@ -155,10 +156,10 @@ export default function TeacherDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
-      {!isSupabaseConfigured && !isLocalDemo && (
+      {!isSupabaseConfigured && (
         <div className="mb-8 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-sm">
-          Weder Demo- noch Supabase-Modus aktiv. Setze <code className="bg-rose-100 px-1 rounded">VITE_LOCAL_DEMO=true</code> oder Supabase-Keys in{' '}
-          <code className="bg-rose-100 px-1 rounded">.env.local</code>.
+          Supabase ist nicht konfiguriert. Setze <code className="bg-rose-100 px-1 rounded">VITE_SUPABASE_URL</code> und{' '}
+          <code className="bg-rose-100 px-1 rounded">VITE_SUPABASE_ANON_KEY</code> in <code className="bg-rose-100 px-1 rounded">.env.local</code> (lokal) oder in Vercel.
         </div>
       )}
       <header className="flex flex-col gap-6 mb-12 md:flex-row md:justify-between md:items-start">

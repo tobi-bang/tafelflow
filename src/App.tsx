@@ -24,7 +24,9 @@ export default function App() {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
 
@@ -54,6 +56,8 @@ export default function App() {
     );
   }
 
+  const teacherRouteAllowed = hasSession(user) && teacherOk === true;
+
   return (
     <Router>
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -62,13 +66,7 @@ export default function App() {
           <Route path="/login" element={<LoginTeacher />} />
           <Route
             path="/teacher"
-            element={
-              hasSession(user) && teacherOk === true ? (
-                <TeacherDashboard />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
+            element={teacherRouteAllowed ? <TeacherDashboard /> : <Navigate to="/login" replace />}
           />
           <Route path="/session/:sessionId" element={<SessionView />} />
           <Route path="/join" element={<StudentJoin />} />

@@ -11,6 +11,7 @@ import {
   Download,
   FileText,
   ImageDown,
+  LayoutGrid,
   Loader2,
   Lock,
   Maximize2,
@@ -18,7 +19,10 @@ import {
   Presentation,
   Settings,
   Share2,
+  Smartphone,
   Unlock,
+  UsersRound,
+  Vote,
   X,
   Power,
 } from 'lucide-react';
@@ -30,6 +34,17 @@ import Board from '../components/Board';
 import Brainstorming from '../components/Brainstorming';
 import Polls from '../components/Polls';
 import WordCloud from '../components/WordCloud';
+import LivePoll from '../components/LivePoll';
+import PeerFeedback from '../components/PeerFeedback';
+import SessionToolShell from '../components/session/SessionToolShell';
+import type { SessionTabId } from '../lib/sessionToolMeta';
+import { SESSION_TAB_ORDER, SESSION_TOOL_META } from '../lib/sessionToolMeta';
+import {
+  getEffectiveSessionRole,
+  isEffectiveTeacher,
+  readPreviewAsStudentPreference,
+  writePreviewAsStudentPreference,
+} from '../lib/sessionRole';
 import {
   buildProtocolText,
   downloadProtocolPdf,
@@ -38,9 +53,9 @@ import {
   safeExportBasename,
 } from '../lib/sessionExport';
 
-type Tab = 'board' | 'brainstorming' | 'polls' | 'wordcloud';
+type Tab = SessionTabId;
 
-const ALL_TABS: Tab[] = ['board', 'brainstorming', 'polls', 'wordcloud'];
+const ALL_TABS: Tab[] = [...SESSION_TAB_ORDER];
 
 function visibleTabsForStudent(p: SessionPermissions): Tab[] {
   const tabs: Tab[] = [];
@@ -48,23 +63,30 @@ function visibleTabsForStudent(p: SessionPermissions): Tab[] {
   if (p.addSticky || p.moveSticky || p.organizeBrainstorm) tabs.push('brainstorming');
   if (p.answerPoll) tabs.push('polls');
   if (p.submitWord) tabs.push('wordcloud');
+  if (p.livePoll) tabs.push('livepoll');
+  if (p.peerFeedback) tabs.push('peerfeedback');
   return tabs;
 }
 
-const TAB_META: Record<Tab, { label: string; icon: React.ReactNode }> = {
-  board: { label: 'Tafel', icon: <Presentation className="w-6 h-6" /> },
-  brainstorming: { label: 'Ideen', icon: <FileText className="w-6 h-6" /> },
-  polls: { label: 'Umfrage', icon: <BarChart3 className="w-6 h-6" /> },
-  wordcloud: { label: 'Wortwolke', icon: <Cloud className="w-6 h-6" /> },
+const TAB_ICONS: Record<Tab, React.ReactNode> = {
+  board: <Presentation className="w-6 h-6" />,
+  brainstorming: <FileText className="w-6 h-6" />,
+  polls: <BarChart3 className="w-6 h-6" />,
+  wordcloud: <Cloud className="w-6 h-6" />,
+  livepoll: <Vote className="w-6 h-6" />,
+  peerfeedback: <UsersRound className="w-6 h-6" />,
 };
 
 export default function SessionView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [isTeacher, setIsTeacher] = useState(false);
+  /** Nur für Lehrkräfte: SuS-Oberfläche zur Vorschau (lokal, kein Backend) */
+  const [previewAsStudent, setPreviewAsStudent] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('board');
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showToolPicker, setShowToolPicker] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportBusy, setExportBusy] = useState<'pdf' | 'txt' | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -99,6 +121,14 @@ export default function SessionView() {
   }, [sessionId]);
 
   useEffect(() => {
+    if (isTeacher) setPreviewAsStudent(readPreviewAsStudentPreference());
+    else setPreviewAsStudent(false);
+  }, [isTeacher]);
+
+  const effectiveIsTeacher = isEffectiveTeacher(isTeacher, previewAsStudent);
+  const sessionRole = getEffectiveSessionRole(isTeacher, previewAsStudent);
+
+  useEffect(() => {
     if (!sessionId) return;
     const load = async () => {
       const { data, error } = await supabase.from('sessions').select('*').eq('id', sessionId).maybeSingle();
@@ -128,18 +158,18 @@ export default function SessionView() {
 
   const participantTabs = useMemo(() => {
     if (!session) return ALL_TABS;
-    if (isTeacher) return ALL_TABS;
+    if (effectiveIsTeacher) return ALL_TABS;
     return visibleTabsForStudent(session.permissions);
-  }, [session, isTeacher]);
+  }, [session, effectiveIsTeacher]);
 
-  const showSideNav = Boolean(session && (isTeacher || participantTabs.length > 1));
+  const showSideNav = Boolean(session && (effectiveIsTeacher || participantTabs.length > 1));
 
   useEffect(() => {
-    if (!session || isTeacher) return;
+    if (!session || effectiveIsTeacher) return;
     const tabs = visibleTabsForStudent(session.permissions);
     if (tabs.length === 0) return;
     if (!tabs.includes(activeTab)) setActiveTab(tabs[0]);
-  }, [session, isTeacher, activeTab]);
+  }, [session, effectiveIsTeacher, activeTab]);
 
   if (!session) return null;
 
@@ -232,7 +262,7 @@ export default function SessionView() {
     }
   };
 
-  const studentBlocked = !isTeacher && session.status !== 'active';
+  const studentBlocked = (!isTeacher || previewAsStudent) && session.status !== 'active';
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
@@ -240,28 +270,62 @@ export default function SessionView() {
         <div className="flex items-center gap-4 min-w-0">
           <button
             type="button"
-            onClick={() => navigate(isTeacher ? '/teacher' : '/')}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+            onClick={() => navigate(isTeacher && !previewAsStudent ? '/teacher' : '/')}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+            aria-label="Zurück"
           >
             <ChevronLeft className="w-5 h-5 text-slate-600" />
           </button>
           <div className="flex flex-col min-w-0">
             <h1 className="text-lg font-bold text-slate-900 leading-none truncate">{session.name}</h1>
             <span className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">
-              {isTeacher ? `Lehrkraft · Raumcode ${session.room_code}` : 'Schüleransicht'}
+              {effectiveIsTeacher
+                ? `Lehrkraft · Raumcode ${session.room_code}`
+                : isTeacher && previewAsStudent
+                  ? 'Vorschau Schüleransicht'
+                  : 'Schüleransicht'}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {participantTabs.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowToolPicker(true)}
+              className="flex items-center gap-2 px-3 py-2.5 border border-slate-200 bg-white text-slate-800 rounded-xl font-semibold hover:bg-slate-50 transition-colors min-h-[44px]"
+              title="Tool wählen"
+            >
+              <LayoutGrid className="w-5 h-5 shrink-0" />
+              <span className="hidden sm:inline text-sm">Tools</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowShare(true)}
-            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-semibold hover:bg-blue-100 transition-colors"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-blue-50 text-blue-600 rounded-xl font-semibold hover:bg-blue-100 transition-colors min-h-[44px]"
           >
-            <Share2 className="w-4 h-4" />
+            <Share2 className="w-4 h-4 shrink-0" />
             <span className="hidden sm:inline">QR</span>
           </button>
+
+          {isTeacher && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !previewAsStudent;
+                setPreviewAsStudent(next);
+                writePreviewAsStudentPreference(next);
+              }}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-sm transition-colors min-h-[44px] ${
+                previewAsStudent ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+              title={previewAsStudent ? 'Zur Lehrkraft-Ansicht' : 'Schüleransicht (Vorschau)'}
+            >
+              <Smartphone className="w-5 h-5 shrink-0" />
+              <span className="hidden xl:inline">{previewAsStudent ? 'Lehrkraft' : 'Als SuS'}</span>
+            </button>
+          )}
 
           {isTeacher && (
             <>
@@ -321,16 +385,27 @@ export default function SessionView() {
         </div>
       </header>
 
+      {isTeacher && previewAsStudent && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-center text-sm text-amber-950 shrink-0 z-10">
+          <span className="font-semibold">Vorschau: Schüleransicht</span>
+          <span className="hidden sm:inline"> — Verwaltung (Beenden, Einstellungen, QR) bleibt oben sichtbar.</span>
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden min-h-0">
         {showSideNav && (
-          <nav className="w-[4.5rem] sm:w-20 bg-white border-r border-slate-200 flex flex-col items-center py-4 sm:py-6 gap-4 sm:gap-6 shrink-0 overflow-y-auto">
-            {(isTeacher ? ALL_TABS : participantTabs).map((tab) => (
+          <nav
+            className="w-[4.5rem] sm:w-[5.25rem] bg-white border-r border-slate-200 flex flex-col items-stretch py-3 sm:py-5 gap-2 sm:gap-3 shrink-0 overflow-y-auto overflow-x-hidden touch-pan-y"
+            aria-label="Werkzeuge der Sitzung"
+          >
+            {(effectiveIsTeacher ? ALL_TABS : participantTabs).map((tab) => (
               <React.Fragment key={tab}>
                 <NavIcon
                   active={activeTab === tab}
                   onClick={() => setActiveTab(tab)}
-                  icon={TAB_META[tab].icon}
-                  label={TAB_META[tab].label}
+                  icon={TAB_ICONS[tab]}
+                  label={SESSION_TOOL_META[tab].navLabel}
+                  title={SESSION_TOOL_META[tab].title}
                 />
               </React.Fragment>
             ))}
@@ -354,11 +429,11 @@ export default function SessionView() {
             </div>
           )}
 
-          {!isTeacher && !studentBlocked && participantTabs.length === 0 && (
+          {!effectiveIsTeacher && !studentBlocked && participantTabs.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-slate-600 z-10 bg-slate-50">
               <p className="font-semibold text-slate-800 text-lg">Für dich ist gerade nichts freigeschaltet</p>
               <p className="text-sm mt-3 max-w-sm">
-                Die Lehrkraft kann unter Sitzungseinstellungen bei <strong>Nutzung für SuS</strong> Tafel, Ideen, Umfrage oder Wortwolke aktivieren.
+                Die Lehrkraft kann unter Sitzungseinstellungen bei <strong>Nutzung für SuS</strong> Tafel, Ideen, Umfrage, Wortwolke, Live-Abstimmung oder Peer-Feedback aktivieren.
               </p>
             </div>
           )}
@@ -370,49 +445,149 @@ export default function SessionView() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="w-full h-full bg-white shadow-inner"
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
               >
-                <Board
-                  sessionId={session.id}
-                  isTeacher={isTeacher}
-                  permissions={session.permissions}
+                <SessionToolShell
+                  tabId="board"
+                  role={sessionRole}
                   presentationMode={session.presentationMode}
-                />
+                  variant="canvas"
+                >
+                  <div className="flex-1 min-h-0 bg-white shadow-inner">
+                    <Board
+                      sessionId={session.id}
+                      isTeacher={effectiveIsTeacher}
+                      permissions={session.permissions}
+                      presentationMode={session.presentationMode}
+                    />
+                  </div>
+                </SessionToolShell>
               </motion.div>
             )}
             {activeTab === 'brainstorming' && participantTabs.includes('brainstorming') && (
-              <motion.div key="brainstorming" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full h-full">
-                <Brainstorming
-                  sessionId={session.id}
-                  isTeacher={isTeacher}
-                  permissions={session.permissions}
+              <motion.div
+                key="brainstorming"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell
+                  tabId="brainstorming"
+                  role={sessionRole}
                   presentationMode={session.presentationMode}
-                />
+                  variant="canvas"
+                >
+                  <div className="flex-1 min-h-0">
+                    <Brainstorming
+                      sessionId={session.id}
+                      isTeacher={effectiveIsTeacher}
+                      permissions={session.permissions}
+                      presentationMode={session.presentationMode}
+                    />
+                  </div>
+                </SessionToolShell>
               </motion.div>
             )}
             {activeTab === 'polls' && participantTabs.includes('polls') && (
-              <motion.div key="polls" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full h-full p-6 sm:p-8 overflow-y-auto">
-                <Polls
-                  sessionId={session.id}
-                  isTeacher={isTeacher}
-                  permissions={session.permissions}
-                  presentationMode={session.presentationMode}
-                />
+              <motion.div
+                key="polls"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell tabId="polls" role={sessionRole} presentationMode={session.presentationMode} variant="page">
+                  <Polls
+                    sessionId={session.id}
+                    isTeacher={effectiveIsTeacher}
+                    permissions={session.permissions}
+                    presentationMode={session.presentationMode}
+                  />
+                </SessionToolShell>
               </motion.div>
             )}
             {activeTab === 'wordcloud' && participantTabs.includes('wordcloud') && (
-              <motion.div key="wordcloud" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full h-full p-6 sm:p-8">
-                <WordCloud
-                  sessionId={session.id}
-                  isTeacher={isTeacher}
-                  permissions={session.permissions}
+              <motion.div
+                key="wordcloud"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell tabId="wordcloud" role={sessionRole} presentationMode={session.presentationMode} variant="page">
+                  <WordCloud
+                    sessionId={session.id}
+                    isTeacher={effectiveIsTeacher}
+                    permissions={session.permissions}
+                    presentationMode={session.presentationMode}
+                  />
+                </SessionToolShell>
+              </motion.div>
+            )}
+            {activeTab === 'livepoll' && participantTabs.includes('livepoll') && (
+              <motion.div
+                key="livepoll"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell tabId="livepoll" role={sessionRole} presentationMode={session.presentationMode} variant="page">
+                  <LivePoll sessionId={session.id} isTeacher={effectiveIsTeacher} presentationMode={session.presentationMode} />
+                </SessionToolShell>
+              </motion.div>
+            )}
+            {activeTab === 'peerfeedback' && participantTabs.includes('peerfeedback') && (
+              <motion.div
+                key="peerfeedback"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell
+                  tabId="peerfeedback"
+                  role={sessionRole}
                   presentationMode={session.presentationMode}
-                />
+                  variant="page"
+                >
+                  <PeerFeedback sessionId={session.id} isTeacher={effectiveIsTeacher} presentationMode={session.presentationMode} />
+                </SessionToolShell>
               </motion.div>
             )}
           </AnimatePresence>
         </main>
       </div>
+
+      {showToolPicker && session && (
+        <Modal onClose={() => setShowToolPicker(false)} title="Tool wählen">
+          <p className="text-slate-600 text-sm mb-4">Tippe ein Werkzeug – ideal für Smartphones und Tablets.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[min(70vh,520px)] overflow-y-auto pr-1">
+            {participantTabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab);
+                  setShowToolPicker(false);
+                }}
+                className={`flex gap-3 p-4 rounded-2xl border text-left transition-all min-h-[72px] ${
+                  activeTab === tab ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'
+                }`}
+              >
+                <div className="shrink-0 text-blue-600 [&>svg]:w-8 [&>svg]:h-8">{TAB_ICONS[tab]}</div>
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900">{SESSION_TOOL_META[tab].title}</div>
+                  <div className="text-xs text-slate-600 mt-1 leading-snug">
+                    {effectiveIsTeacher ? SESSION_TOOL_META[tab].descriptionTeacher : SESSION_TOOL_META[tab].descriptionStudent}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {showShare && (
         <Modal onClose={() => setShowShare(false)} title="Schüler beitreten">
@@ -581,6 +756,8 @@ export default function SessionView() {
                 <PermissionToggle label="Ideen sortieren (Moderation)" active={session.permissions.organizeBrainstorm} onClick={() => togglePermission('organizeBrainstorm')} />
                 <PermissionToggle label="Umfragen beantworten" active={session.permissions.answerPoll} onClick={() => togglePermission('answerPoll')} />
                 <PermissionToggle label="Wörter einsenden" active={session.permissions.submitWord} onClick={() => togglePermission('submitWord')} />
+                <PermissionToggle label="Live-Abstimmung" active={session.permissions.livePoll} onClick={() => togglePermission('livePoll')} />
+                <PermissionToggle label="Peer-Feedback" active={session.permissions.peerFeedback} onClick={() => togglePermission('peerFeedback')} />
               </div>
             </section>
           </div>
@@ -595,20 +772,28 @@ function NavIcon({
   onClick,
   icon,
   label,
+  title,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  /** Vollständiger Tool-Name für Tooltip / Screenreader */
+  title: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 group transition-all ${active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+      title={title}
+      aria-label={title}
+      aria-current={active ? 'true' : undefined}
+      className={`flex flex-col items-center gap-1 group transition-all px-1 py-1 rounded-xl min-h-[4.5rem] justify-center ${
+        active ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
+      }`}
     >
-      <div className={`p-3 rounded-2xl transition-all ${active ? 'bg-blue-50 shadow-sm' : 'group-hover:bg-slate-50'}`}>{icon}</div>
-      <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+      <div className={`p-2.5 sm:p-3 rounded-2xl transition-all ${active ? 'bg-blue-50 shadow-sm' : 'group-hover:bg-slate-50'}`}>{icon}</div>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-center leading-tight px-0.5">{label}</span>
     </button>
   );
 }
@@ -619,7 +804,7 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">{title}</h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full">
+          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full" aria-label="Schließen">
             <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>

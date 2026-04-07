@@ -19,6 +19,8 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     organizeBrainstorm: p.organizeBrainstorm !== false,
     answerPoll: p.answerPoll !== false,
     submitWord: p.submitWord !== false,
+    livePoll: p.livePoll !== false,
+    peerFeedback: p.peerFeedback !== false,
   };
 }
 

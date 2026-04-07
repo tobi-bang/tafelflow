@@ -105,7 +105,7 @@ export default function WordCloud({
   const fontStep = presentationMode ? 12 : 8;
 
   return (
-    <div className="h-full flex flex-col gap-6">
+    <div className="h-full min-h-0 flex flex-col gap-4 sm:gap-6 flex-1">
       {canSubmit && (
         <div className="max-w-2xl mx-auto w-full flex flex-col sm:flex-row gap-3 sm:items-center">
           <form onSubmit={submitWord} className="flex-1 flex gap-2">

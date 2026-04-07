@@ -27,7 +27,9 @@ create table if not exists public.sessions (
     "moveSticky": true,
     "organizeBrainstorm": true,
     "answerPoll": true,
-    "submitWord": true
+    "submitWord": true,
+    "livePoll": true,
+    "peerFeedback": true
   }'::jsonb,
   created_at timestamptz not null default now()
 );
