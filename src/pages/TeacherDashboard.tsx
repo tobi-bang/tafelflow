@@ -103,9 +103,13 @@ export default function TeacherDashboard() {
       });
 
       if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : null;
-      const sessionId = row?.session_id as string | undefined;
-      const roomCode = row?.room_code as string | undefined;
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+      const sessionId =
+        (row?.out_session_id as string | undefined) ??
+        (row?.session_id as string | undefined);
+      const roomCode =
+        (row?.out_room_code as string | undefined) ??
+        (row?.room_code as string | undefined);
       if (!sessionId || !roomCode) throw new Error('Keine Antwort vom Server');
 
       setNewSessionName('');
