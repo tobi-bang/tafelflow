@@ -4,7 +4,7 @@ import { supabase, ensureAnonymousSession, isSupabaseConfigured } from '../lib/s
 import { Presentation, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 
-export default function JoinSession() {
+export default function StudentJoin() {
   const { roomCode: roomCodeParam } = useParams<{ roomCode: string }>();
   const [sessionName, setSessionName] = useState<string | null>(null);
   const [studentName, setStudentName] = useState('');
@@ -13,8 +13,8 @@ export default function JoinSession() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const isManual = roomCodeParam === 'manual';
-  const codeFromUrl = roomCodeParam && !isManual ? roomCodeParam : null;
+  const isManual = !roomCodeParam;
+  const codeFromUrl = roomCodeParam ? roomCodeParam : null;
 
   useEffect(() => {
     if (!codeFromUrl) return;
@@ -33,7 +33,7 @@ export default function JoinSession() {
       }
       const row = Array.isArray(data) ? data[0] : null;
       if (row?.session_name) setSessionName(String(row.session_name));
-      else setError('Sitzung nicht gefunden.');
+      else setError('Sitzung nicht gefunden oder beendet.');
     })();
   }, [codeFromUrl]);
 
@@ -65,7 +65,7 @@ export default function JoinSession() {
       navigate(`/session/${sessionId}`);
     } catch (err) {
       console.error(err);
-      setError('Beitritt fehlgeschlagen. Raumcode prüfen.');
+      setError('Beitritt fehlgeschlagen. Raumcode prüfen (oder Sitzung ist beendet).');
     } finally {
       setLoading(false);
     }
@@ -85,15 +85,11 @@ export default function JoinSession() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">TafelFlow</h1>
         </div>
 
-        <h2 className="text-2xl font-bold text-center mb-2">
-          {isManual ? 'Sitzung beitreten' : 'Willkommen!'}
-        </h2>
+        <h2 className="text-2xl font-bold text-center mb-2">Schüler beitreten</h2>
         <p className="text-slate-500 text-center mb-8">
           {sessionName
             ? `Du trittst der Sitzung „${sessionName}“ bei.`
-            : isManual
-              ? 'Raumcode von der Lehrkraft eingeben (nur Code, keine PIN).'
-              : 'Gib einen Anzeigenamen ein (frei wählbar, z. B. Pseudonym).'}
+            : 'Gib Raumcode und Anzeigenamen ein (Pseudonym möglich).'}
         </p>
 
         {error && (
@@ -152,3 +148,4 @@ export default function JoinSession() {
     </div>
   );
 }
+

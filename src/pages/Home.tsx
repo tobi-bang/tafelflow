@@ -1,15 +1,10 @@
 import React from 'react';
-import type { AppUser } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { isSupabaseConfigured, isLocalDemo } from '../lib/supabase';
-import { Monitor, Users, Presentation, ClipboardList, Cloud, Share2 } from 'lucide-react';
+import { GraduationCap, Users, Presentation, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 
-interface HomeProps {
-  user: AppUser | null;
-}
-
-export default function Home({ user: _user }: HomeProps) {
+export default function Home() {
   const navigate = useNavigate();
 
   return (
@@ -35,94 +30,74 @@ export default function Home({ user: _user }: HomeProps) {
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">TafelFlow</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/teacher')}
-          className="text-slate-600 hover:text-blue-600 font-medium transition-colors"
-        >
-          Lehrkraft-Bereich
-        </button>
+        <div className="text-xs text-slate-500 font-medium hidden sm:block">
+          Geschützt für Lehrkräfte · reduziert für SuS
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 pt-12 pb-24 text-center">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <h2 className="text-5xl md:text-7xl font-extrabold text-slate-900 mb-6 leading-tight">
-            Die interaktive Tafel <br />
-            <span className="text-blue-600">für modernes Lernen.</span>
+          <h2 className="text-4xl md:text-6xl font-extrabold text-slate-900 mb-6 leading-tight">
+            Starte jetzt <span className="text-blue-600">den richtigen Zugang</span>.
           </h2>
-          <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-10">
-            {isLocalDemo
-              ? 'Du testest lokal im Browser: Raumcode & PIN für die Lehrkraft, SuS mit Raumcode und Pseudonym – ohne Online-Datenbank.'
-              : 'Mit Supabase: Raumcode und PIN (anonym, ohne Google). SuS treten mit Raumcode und frei wählbarem Namen bei.'}
+          <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto mb-10">
+            Lehrkräfte verwalten und geben Inhalte frei. Schülerinnen und Schüler sehen nur, was im Unterricht freigeschaltet ist.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto text-left">
             <button
               type="button"
-              onClick={() => navigate('/teacher')}
-              className="w-full sm:w-auto bg-blue-600 text-white px-8 py-4 rounded-2xl text-lg font-semibold hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
+              onClick={() => navigate('/login')}
+              className="group bg-white border border-slate-200 rounded-3xl p-7 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
             >
-              Sitzung erstellen / anmelden
+              <div className="flex items-start gap-4">
+                <div className="bg-blue-600 text-white p-3 rounded-2xl shrink-0">
+                  <GraduationCap className="w-7 h-7" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-bold text-slate-900">Lehrkraft anmelden</span>
+                    <ShieldCheck className="w-5 h-5 text-blue-600 opacity-80" />
+                  </div>
+                  <p className="text-slate-600 mt-1">
+                    Geschütztes Dashboard: Sitzung erstellen, Inhalte freigeben, sperren und Ergebnisse exportieren.
+                  </p>
+                  <p className="text-sm text-slate-400 mt-3">
+                    E-Mail + Passwort
+                  </p>
+                </div>
+              </div>
             </button>
+
             <button
               type="button"
-              onClick={() => navigate('/join/manual')}
-              className="w-full sm:w-auto bg-white text-slate-700 border border-slate-200 px-8 py-4 rounded-2xl text-lg font-semibold hover:bg-slate-50 transition-all shadow-sm"
+              onClick={() => navigate('/join')}
+              className="group bg-white border border-slate-200 rounded-3xl p-7 shadow-sm hover:shadow-md transition-all hover:-translate-y-0.5"
             >
-              Sitzung beitreten
+              <div className="flex items-start gap-4">
+                <div className="bg-emerald-600 text-white p-3 rounded-2xl shrink-0">
+                  <Users className="w-7 h-7" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl font-bold text-slate-900">Schüler beitreten</div>
+                  <p className="text-slate-600 mt-1">
+                    Raumcode + Name. Du siehst nur freigegebene Bereiche – ohne Verwaltungsfunktionen.
+                  </p>
+                  <p className="text-sm text-slate-400 mt-3">
+                    Kein Login nötig
+                  </p>
+                </div>
+              </div>
             </button>
           </div>
         </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-8 mt-32">
-          <FeatureCard
-            icon={<Monitor className="w-8 h-8 text-blue-500" />}
-            title="Digitale Tafel"
-            description="Freies Zeichnen und Schreiben in Echtzeit für alle Teilnehmer."
-          />
-          <FeatureCard
-            icon={<ClipboardList className="w-8 h-8 text-indigo-500" />}
-            title="Brainstorming"
-            description="Sammle Ideen mit Sticky Notes und gruppiere sie interaktiv."
-          />
-          <FeatureCard
-            icon={<Cloud className="w-8 h-8 text-cyan-500" />}
-            title="Wortwolken"
-            description="Visualisiere Begriffe und Meinungen live als dynamische Cloud."
-          />
-          <FeatureCard
-            icon={<Users className="w-8 h-8 text-emerald-500" />}
-            title="Echtzeit-Umfragen"
-            description="Erstelle schnelle Umfragen und sieh die Ergebnisse sofort."
-          />
-          <FeatureCard
-            icon={<Share2 className="w-8 h-8 text-amber-500" />}
-            title="QR-Code Beitritt"
-            description="SuS scannen den Link zum Raumcode – ohne PIN."
-          />
-          <FeatureCard
-            icon={<Presentation className="w-8 h-8 text-rose-500" />}
-            title="Anonym & PIN-geschützt"
-            description="Kein Google-Login: Steuerung nur mit Raumcode und PIN."
-          />
-        </div>
       </main>
 
       <footer className="border-t border-slate-200 py-12 bg-white">
         <div className="max-w-7xl mx-auto px-6 text-center text-slate-500">
-          <p>© 2026 TafelFlow. Entwickelt für Schulen von morgen.</p>
+          <p>© 2026 TafelFlow. TobCreator</p>
         </div>
       </footer>
     </div>
-  );
-}
-
-function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
-  return (
-    <motion.div whileHover={{ y: -5 }} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-left">
-      <div className="mb-4">{icon}</div>
-      <h3 className="text-xl font-bold text-slate-900 mb-2">{title}</h3>
-      <p className="text-slate-600">{description}</p>
-    </motion.div>
   );
 }

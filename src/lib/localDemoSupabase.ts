@@ -308,6 +308,7 @@ async function rpc(name: string, params: Record<string, unknown>): Promise<{ dat
     const code = String(params.p_room_code ?? '').toUpperCase().trim();
     const s = store.sessions.find((x) => String(x.room_code).toUpperCase() === code);
     if (!s) return { data: [], error: null };
+    if (String(s.status) !== 'active') return { data: [], error: null };
     return { data: [{ session_id: s.id, session_name: s.name }], error: null };
   }
 
@@ -353,6 +354,7 @@ async function rpc(name: string, params: Record<string, unknown>): Promise<{ dat
     const code = String(params.p_room_code ?? '').toUpperCase().trim();
     const s = store.sessions.find((x) => String(x.room_code).toUpperCase() === code);
     if (!s) return { data: null, error: new Error('Sitzung nicht gefunden') };
+    if (String(s.status) !== 'active') return { data: null, error: new Error('Sitzung ist beendet') };
     const sid = String(s.id);
     const existing = store.session_members.find((m) => String(m.session_id) === sid && String(m.user_id) === uid);
     if (existing) {

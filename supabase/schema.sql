@@ -7,6 +7,12 @@ create extension if not exists pgcrypto;
 -- Tabellen
 -- ---------------------------------------------------------------------------
 
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'student' check (role in ('teacher', 'student')),
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
   room_code text not null unique,
@@ -165,6 +171,9 @@ begin
   if auth.uid() is null then
     raise exception 'Nicht angemeldet';
   end if;
+  if not exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'teacher') then
+    raise exception 'Nur Lehrkräfte dürfen Sitzungen erstellen';
+  end if;
   if length(trim(p_name)) < 1 then
     raise exception 'Name erforderlich';
   end if;
@@ -212,6 +221,7 @@ begin
   select s.id, s.name
   from public.sessions s
   where upper(trim(s.room_code)) = c
+    and s.status = 'active'
   limit 1;
 end;
 $$;
@@ -236,6 +246,9 @@ begin
   select s.id into sid from public.sessions s where upper(trim(s.room_code)) = c limit 1;
   if sid is null then
     raise exception 'Sitzung nicht gefunden';
+  end if;
+  if exists (select 1 from public.sessions s where s.id = sid and s.status <> 'active') then
+    raise exception 'Sitzung ist beendet';
   end if;
 
   insert into public.session_members (session_id, user_id, role, display_name)
@@ -337,6 +350,7 @@ $$;
 -- ---------------------------------------------------------------------------
 
 alter table public.sessions enable row level security;
+alter table public.profiles enable row level security;
 alter table public.session_members enable row level security;
 alter table public.board_objects enable row level security;
 alter table public.stickies enable row level security;
@@ -347,7 +361,13 @@ alter table public.words enable row level security;
 -- sessions
 create policy "sessions_select_member"
   on public.sessions for select
-  using (public.is_session_member(id, auth.uid()));
+  using (
+    public.is_session_teacher(id, auth.uid())
+    or (
+      public.is_session_member(id, auth.uid())
+      and status = 'active'
+    )
+  );
 
 create policy "sessions_update_teacher"
   on public.sessions for update
@@ -539,3 +559,11 @@ grant execute on function public.join_session_as_student(text, text) to authenti
 grant execute on function public.join_session_as_teacher(text, text) to authenticated;
 grant execute on function public.get_session_join_preview(text) to anon, authenticated;
 grant execute on function public.assign_sticky_heading(uuid, uuid) to authenticated;
+
+-- profiles (Rollen): User darf sich selbst lesen, nur Lehrkraft darf eigene Rolle sehen (für Guards),
+-- Schreiben/Setzen passiert über Admin-Setup (oder optional Trigger/RPC).
+create policy "profiles_select_own"
+  on public.profiles for select
+  using (id = auth.uid());
+
+grant select on public.profiles to authenticated;

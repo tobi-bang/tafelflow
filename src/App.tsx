@@ -4,35 +4,47 @@ import { supabase } from './lib/supabase';
 import TeacherDashboard from './pages/TeacherDashboard';
 import SessionView from './pages/SessionView';
 import Home from './pages/Home';
-import JoinSession from './pages/JoinSession';
-import type { AppUser } from './types';
+import StudentJoin from './pages/StudentJoin';
+import LoginTeacher from './pages/LoginTeacher';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { requireTeacher } from './lib/role';
 
-function mapUser(u: SupabaseUser | null): AppUser | null {
-  if (!u) return null;
-  const meta = u.user_metadata as Record<string, string | undefined> | undefined;
-  return {
-    id: u.id,
-    displayName: meta?.display_name ?? meta?.full_name ?? null,
-  };
+function hasSession(u: SupabaseUser | null): boolean {
+  return Boolean(u?.id);
 }
 
 export default function App() {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [teacherOk, setTeacherOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(mapUser(session?.user ?? null));
+      setUser(session?.user ?? null);
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(mapUser(session?.user ?? null));
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user) {
+        setTeacherOk(null);
+        return;
+      }
+      const ok = await requireTeacher();
+      if (!cancelled) setTeacherOk(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   if (loading) {
     return (
@@ -46,10 +58,21 @@ export default function App() {
     <Router>
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
         <Routes>
-          <Route path="/" element={<Home user={user} />} />
-          <Route path="/teacher" element={<TeacherDashboard />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<LoginTeacher />} />
+          <Route
+            path="/teacher"
+            element={
+              hasSession(user) && teacherOk === true ? (
+                <TeacherDashboard />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
           <Route path="/session/:sessionId" element={<SessionView />} />
-          <Route path="/join/:roomCode" element={<JoinSession />} />
+          <Route path="/join" element={<StudentJoin />} />
+          <Route path="/student/:roomCode" element={<StudentJoin />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>

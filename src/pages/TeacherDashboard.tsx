@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase, ensureAnonymousSession, isSupabaseConfigured, isLocalDemo } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, isLocalDemo } from '../lib/supabase';
 import { rowToSession } from '../lib/dbMap';
 import type { Session } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ExternalLink, Presentation, KeyRound } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Presentation, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { requireTeacher } from '../lib/role';
 
 export default function TeacherDashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -12,10 +13,6 @@ export default function TeacherDashboard() {
   const [newPin, setNewPin] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [loginCode, setLoginCode] = useState('');
-  const [loginPin, setLoginPin] = useState('');
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginLoading, setLoginLoading] = useState(false);
   const navigate = useNavigate();
 
   const loadSessions = useCallback(async (uid: string) => {
@@ -53,9 +50,13 @@ export default function TeacherDashboard() {
 
     (async () => {
       try {
-        await ensureAnonymousSession();
         const { data: { user: u } } = await supabase.auth.getUser();
         if (cancelled || !u) return;
+        const ok = await requireTeacher();
+        if (!ok) {
+          navigate('/login', { replace: true });
+          return;
+        }
         setAuthReady(true);
         await loadSessions(u.id);
 
@@ -96,7 +97,6 @@ export default function TeacherDashboard() {
     }
 
     try {
-      await ensureAnonymousSession();
       const { data, error } = await supabase.rpc('create_session', {
         p_name: newSessionName.trim(),
         p_pin: newPin,
@@ -136,38 +136,9 @@ export default function TeacherDashboard() {
     if (u) await loadSessions(u.id);
   };
 
-  const handleTeacherLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isSupabaseConfigured) {
-      setLoginError('Supabase nicht konfiguriert (.env.local).');
-      return;
-    }
-    setLoginError(null);
-    if (loginCode.trim().length < 4 || loginPin.length < 4) {
-      setLoginError('Raumcode und PIN (mind. 4 Zeichen) eingeben.');
-      return;
-    }
-    setLoginLoading(true);
-    try {
-      await ensureAnonymousSession();
-      const { data, error } = await supabase.rpc('join_session_as_teacher', {
-        p_room_code: loginCode.trim(),
-        p_pin: loginPin,
-      });
-      if (error) throw error;
-      const sessionId = data as string;
-      if (!sessionId) throw new Error('Ungültige Antwort');
-      setLoginCode('');
-      setLoginPin('');
-      const { data: { user: u } } = await supabase.auth.getUser();
-      if (u) await loadSessions(u.id);
-      navigate(`/session/${sessionId}`);
-    } catch (err: unknown) {
-      console.error(err);
-      setLoginError('Raumcode oder PIN ungültig.');
-    } finally {
-      setLoginLoading(false);
-    }
+  const logout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
   };
 
   if (!authReady) {
@@ -190,56 +161,29 @@ export default function TeacherDashboard() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Lehrkraft-Bereich</h1>
           <p className="text-slate-500 mt-1">
-            Anonym: Raumcode und PIN – kein Google-Konto. Speichere Raumcode und PIN sicher; die PIN schützt deine Steuerungsrechte.
+            Geschützt: nur für Lehrkräfte. Hier erstellst und verwaltest du Sitzungen und Freigaben für SuS.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setIsCreating(true)}
-          className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 shrink-0"
-        >
-          <Plus className="w-5 h-5" />
-          Neue Sitzung
-        </button>
-      </header>
-
-      <section className="mb-12 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-        <div className="flex items-center gap-2 mb-4 text-slate-800 font-semibold">
-          <KeyRound className="w-5 h-5 text-blue-600" />
-          Mit bestehender Sitzung anmelden
-        </div>
-        <form onSubmit={handleTeacherLogin} className="flex flex-col sm:flex-row gap-3 sm:items-end">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Raumcode</label>
-            <input
-              value={loginCode}
-              onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
-              placeholder="z. B. AB12CD34"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono uppercase"
-              autoComplete="off"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-700 mb-1">PIN</label>
-            <input
-              type="password"
-              value={loginPin}
-              onChange={(e) => setLoginPin(e.target.value)}
-              placeholder="••••"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-              autoComplete="new-password"
-            />
-          </div>
+        <div className="flex flex-wrap gap-3 shrink-0">
           <button
-            type="submit"
-            disabled={loginLoading}
-            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-semibold hover:bg-slate-800 disabled:opacity-50"
+            type="button"
+            onClick={() => setIsCreating(true)}
+            className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
           >
-            {loginLoading ? '…' : 'Anmelden'}
+            <Plus className="w-5 h-5" />
+            Neue Sitzung
           </button>
-        </form>
-        {loginError && <p className="text-rose-600 text-sm mt-3">{loginError}</p>}
-      </section>
+          <button
+            type="button"
+            onClick={logout}
+            className="bg-white text-slate-700 border border-slate-200 px-5 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all"
+            title="Abmelden"
+          >
+            <LogOut className="w-5 h-5" />
+            Abmelden
+          </button>
+        </div>
+      </header>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         <AnimatePresence>
