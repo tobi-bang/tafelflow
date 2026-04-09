@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { rowToSession } from '../lib/dbMap';
 import type { Session } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -40,11 +40,6 @@ export default function TeacherDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setAuthReady(true);
-      return;
-    }
-
     let ch: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
 
@@ -88,10 +83,6 @@ export default function TeacherDashboard() {
 
   const createSession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSupabaseConfigured) {
-      alert('Bitte VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env.local setzen und den Server neu starten.');
-      return;
-    }
     if (!newSessionName.trim() || newPin.length < 4) {
       alert('Bitte Namen eingeben und eine PIN mit mindestens 4 Zeichen setzen.');
       return;
@@ -156,12 +147,6 @@ export default function TeacherDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-12">
-      {!isSupabaseConfigured && (
-        <div className="mb-8 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-sm">
-          Supabase ist nicht konfiguriert. Setze <code className="bg-rose-100 px-1 rounded">VITE_SUPABASE_URL</code> und{' '}
-          <code className="bg-rose-100 px-1 rounded">VITE_SUPABASE_ANON_KEY</code> in <code className="bg-rose-100 px-1 rounded">.env.local</code> (lokal) oder in Vercel.
-        </div>
-      )}
       <header className="flex flex-col gap-6 mb-12 md:flex-row md:justify-between md:items-start">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Lehrkraft-Bereich</h1>

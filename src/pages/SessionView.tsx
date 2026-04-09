@@ -16,6 +16,7 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  PanelLeft,
   Presentation,
   Settings,
   Share2,
@@ -57,6 +58,25 @@ type Tab = SessionTabId;
 
 const ALL_TABS: Tab[] = [...SESSION_TAB_ORDER];
 
+/** Sidebar links: Standard aus (max. Platz). Auf „1“ setzen, um die Leiste wieder zu öffnen (nur Lehrkraft-UI). */
+const LEGACY_TOOL_RAIL_STORAGE_KEY = 'tafelflow_legacy_tool_rail';
+
+function readLegacyToolRailPreference(): boolean {
+  try {
+    return sessionStorage.getItem(LEGACY_TOOL_RAIL_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeLegacyToolRailPreference(open: boolean) {
+  try {
+    sessionStorage.setItem(LEGACY_TOOL_RAIL_STORAGE_KEY, open ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
 function visibleTabsForStudent(p: SessionPermissions): Tab[] {
   const tabs: Tab[] = [];
   if (p.drawBoard) tabs.push('board');
@@ -91,6 +111,8 @@ export default function SessionView() {
   const [exportBusy, setExportBusy] = useState<'pdf' | 'txt' | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** Option B: klassische linke Icon-Leiste (Standard: ausgeblendet) */
+  const [legacyToolRailOpen, setLegacyToolRailOpen] = useState(readLegacyToolRailPreference);
 
   const navigate = useNavigate();
   const mainRef = useRef<HTMLDivElement>(null);
@@ -162,7 +184,10 @@ export default function SessionView() {
     return visibleTabsForStudent(session.permissions);
   }, [session, effectiveIsTeacher]);
 
-  const showSideNav = Boolean(session && (effectiveIsTeacher || participantTabs.length > 1));
+  const canShowLegacyToolRail = Boolean(session && (effectiveIsTeacher || participantTabs.length > 1));
+  const showLegacyToolRail = legacyToolRailOpen && canShowLegacyToolRail;
+  /** Lehrkraft braucht immer den Tools-Zugang (auch SuS-Vorschau mit nur einem freigeschalteten Tool). */
+  const showToolsInHeader = isTeacher || participantTabs.length > 1;
 
   useEffect(() => {
     if (!session || effectiveIsTeacher) return;
@@ -267,7 +292,7 @@ export default function SessionView() {
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
       <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-4 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={() => navigate(isTeacher && !previewAsStudent ? '/teacher' : '/')}
@@ -276,6 +301,26 @@ export default function SessionView() {
           >
             <ChevronLeft className="w-5 h-5 text-slate-600" />
           </button>
+          {isTeacher && !previewAsStudent && canShowLegacyToolRail && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !legacyToolRailOpen;
+                setLegacyToolRailOpen(next);
+                writeLegacyToolRailPreference(next);
+              }}
+              className={`p-2 rounded-lg transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border ${
+                legacyToolRailOpen
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'border-transparent hover:bg-slate-100 text-slate-500'
+              }`}
+              title={legacyToolRailOpen ? 'Linke Werkzeugleiste ausblenden' : 'Linke Werkzeugleiste einblenden'}
+              aria-label={legacyToolRailOpen ? 'Linke Werkzeugleiste ausblenden' : 'Linke Werkzeugleiste einblenden'}
+              aria-pressed={legacyToolRailOpen}
+            >
+              <PanelLeft className="w-5 h-5" />
+            </button>
+          )}
           <div className="flex flex-col min-w-0">
             <h1 className="text-lg font-bold text-slate-900 leading-none truncate">{session.name}</h1>
             <span className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">
@@ -289,7 +334,7 @@ export default function SessionView() {
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {participantTabs.length > 1 && (
+          {showToolsInHeader && (
             <button
               type="button"
               onClick={() => setShowToolPicker(true)}
@@ -392,11 +437,11 @@ export default function SessionView() {
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {showSideNav && (
+      <div className="flex-1 flex overflow-hidden min-h-0 w-full min-w-0">
+        {showLegacyToolRail && (
           <nav
             className="w-[4.5rem] sm:w-[5.25rem] bg-white border-r border-slate-200 flex flex-col items-stretch py-3 sm:py-5 gap-2 sm:gap-3 shrink-0 overflow-y-auto overflow-x-hidden touch-pan-y"
-            aria-label="Werkzeuge der Sitzung"
+            aria-label="Werkzeuge der Sitzung (klassische Leiste)"
           >
             {(effectiveIsTeacher ? ALL_TABS : participantTabs).map((tab) => (
               <React.Fragment key={tab}>
@@ -412,7 +457,7 @@ export default function SessionView() {
           </nav>
         )}
 
-        <main className="flex-1 relative overflow-hidden bg-slate-100 min-w-0" ref={mainRef}>
+        <main className="flex-1 relative overflow-hidden bg-slate-100 min-w-0 w-full" ref={mainRef}>
           {studentBlocked && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-slate-700 z-10 bg-slate-50">
               <p className="font-bold text-slate-900 text-xl">Sitzung ist beendet oder gesperrt</p>
@@ -453,7 +498,7 @@ export default function SessionView() {
                   presentationMode={session.presentationMode}
                   variant="canvas"
                 >
-                  <div className="flex-1 min-h-0 bg-white shadow-inner">
+                  <div className="flex-1 min-h-0 min-w-0 bg-white">
                     <Board
                       sessionId={session.id}
                       isTeacher={effectiveIsTeacher}
@@ -665,8 +710,8 @@ export default function SessionView() {
               )}
               <div>
                 <div className="font-bold text-slate-900">Tafel als PDF (Screenshot)</div>
-                <div className="text-xs text-slate-500">
-                  {activeTab === 'board' ? 'Zeichnungen der Tafel' : 'Bitte zuerst den Reiter „Tafel“ öffnen'}
+                  <div className="text-xs text-slate-500">
+                  {activeTab === 'board' ? 'Zeichnungen der Tafel' : 'Bitte zuerst das Tool „Gemeinsame Tafel“ öffnen (Tools-Menü)'}
                 </div>
               </div>
             </button>
@@ -754,6 +799,11 @@ export default function SessionView() {
                 <PermissionToggle label="Ideen hinzufügen" active={session.permissions.addSticky} onClick={() => togglePermission('addSticky')} />
                 <PermissionToggle label="Ideen verschieben" active={session.permissions.moveSticky} onClick={() => togglePermission('moveSticky')} />
                 <PermissionToggle label="Ideen sortieren (Moderation)" active={session.permissions.organizeBrainstorm} onClick={() => togglePermission('organizeBrainstorm')} />
+                <PermissionToggle
+                  label="Anzeigename bei Ideen verlangen (SuS)"
+                  active={session.permissions.ideasRequireDisplayName}
+                  onClick={() => togglePermission('ideasRequireDisplayName')}
+                />
                 <PermissionToggle label="Umfragen beantworten" active={session.permissions.answerPoll} onClick={() => togglePermission('answerPoll')} />
                 <PermissionToggle label="Wörter einsenden" active={session.permissions.submitWord} onClick={() => togglePermission('submitWord')} />
                 <PermissionToggle label="Live-Abstimmung" active={session.permissions.livePoll} onClick={() => togglePermission('livePoll')} />

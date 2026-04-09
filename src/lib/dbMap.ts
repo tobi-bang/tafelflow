@@ -21,6 +21,7 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     submitWord: p.submitWord !== false,
     livePoll: p.livePoll !== false,
     peerFeedback: p.peerFeedback !== false,
+    ideasRequireDisplayName: p.ideasRequireDisplayName !== false,
   };
 }
 
@@ -53,6 +54,9 @@ export function rowToSticky(row: Record<string, unknown>): StickyNote {
   const st = row.sticky_type;
   const stickyType: StickyNote['stickyType'] = st === 'heading' ? 'heading' : 'note';
   const uh = row.under_heading_id;
+  const ds = row.display_scale;
+  const displayScale =
+    typeof ds === 'number' && !Number.isNaN(ds) ? Math.min(2.5, Math.max(0.75, ds)) : 1;
   return {
     id: String(row.id),
     content: String(row.content ?? ''),
@@ -61,6 +65,7 @@ export function rowToSticky(row: Record<string, unknown>): StickyNote {
     authorId: String(row.author_id ?? ''),
     x: Number(row.x ?? 0),
     y: Number(row.y ?? 0),
+    displayScale,
     status: row.status as StickyNote['status'],
     createdAt: String(row.created_at ?? ''),
     stickyType,

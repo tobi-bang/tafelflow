@@ -1,6 +1,5 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { isSupabaseConfigured } from '../lib/supabase';
 import { GraduationCap, Users, Presentation, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -9,13 +8,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      {!isSupabaseConfigured && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-center text-sm py-3 px-4">
-          <strong>Konfiguration fehlt:</strong> Trage <code className="bg-amber-100 px-1 rounded">VITE_SUPABASE_URL</code> und{' '}
-          <code className="bg-amber-100 px-1 rounded">VITE_SUPABASE_ANON_KEY</code> in <code className="bg-amber-100 px-1 rounded">.env.local</code> ein (lokal) bzw. in den Vercel-Umgebungsvariablen (Produktion). Siehe{' '}
-          <code className="bg-amber-100 px-1 rounded">.env.example</code>.
-        </div>
-      )}
       <header className="p-6 flex justify-between items-center max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
           <div className="bg-blue-600 p-2 rounded-lg">
@@ -55,7 +47,7 @@ export default function Home() {
                   <p className="text-slate-600 mt-1">
                     Geschütztes Dashboard: Sitzung erstellen, Inhalte freigeben, sperren und Ergebnisse exportieren.
                   </p>
-                  <p className="text-sm text-slate-400 mt-3">E-Mail + Passwort</p>
+                  <p className="text-sm text-slate-400 mt-3">E-Mail + Passwort · Registrierung über „Noch kein Konto?“</p>
                 </div>
               </div>
             </button>

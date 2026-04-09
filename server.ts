@@ -29,15 +29,23 @@ async function startServer() {
     }
 
     try {
-      // Mock transporter for demo
-      // In production, use real SMTP credentials from process.env
+      const smtpHost = process.env.SMTP_HOST?.trim();
+      const smtpUser = process.env.EMAIL_USER?.trim();
+      const smtpPass = process.env.EMAIL_PASS?.trim();
+      if (!smtpHost || !smtpUser || !smtpPass) {
+        return res.status(503).json({
+          error:
+            "E-Mail-Versand nicht konfiguriert. Setze SMTP_HOST, EMAIL_USER und EMAIL_PASS (siehe .env.example).",
+        });
+      }
+
       const transporter = nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port: 587,
-        secure: false,
+        host: smtpHost,
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: process.env.SMTP_SECURE === "true",
         auth: {
-          user: process.env.EMAIL_USER || "mock_user",
-          pass: process.env.EMAIL_PASS || "mock_pass",
+          user: smtpUser,
+          pass: smtpPass,
         },
       });
 

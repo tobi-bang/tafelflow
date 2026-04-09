@@ -27,23 +27,38 @@ export default function SessionToolShell({
   const meta = SESSION_TOOL_META[tabId];
   const description = role === 'teacher' ? meta.descriptionTeacher : meta.descriptionStudent;
 
-  const headerPad = presentationMode ? 'py-4 sm:py-5' : 'py-3 sm:py-4';
-  const titleClass = presentationMode ? 'text-xl sm:text-2xl' : 'text-lg sm:text-xl';
+  const headerPad =
+    variant === 'canvas'
+      ? presentationMode
+        ? 'py-2.5 sm:py-3.5'
+        : 'py-2 sm:py-3'
+      : presentationMode
+        ? 'py-4 sm:py-5'
+        : 'py-3 sm:py-4';
+  const titleClass =
+    variant === 'canvas'
+      ? presentationMode
+        ? 'text-lg sm:text-xl'
+        : 'text-base sm:text-lg'
+      : presentationMode
+        ? 'text-xl sm:text-2xl'
+        : 'text-lg sm:text-xl';
+  const headerX = variant === 'canvas' ? 'px-3 sm:px-4' : 'px-4 sm:px-6';
 
   return (
-    <div className={variant === 'canvas' ? 'flex flex-col h-full min-h-0 bg-slate-50' : 'flex flex-col min-h-0 h-full'}>
+    <div className={variant === 'canvas' ? 'flex flex-col h-full min-h-0 bg-slate-50 min-w-0' : 'flex flex-col min-h-0 h-full'}>
       <header
-        className={`shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur-sm px-4 sm:px-6 ${headerPad} ${
+        className={`shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur-sm ${headerX} ${headerPad} ${
           variant === 'canvas' ? 'shadow-sm z-10' : ''
         }`}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0 flex-1">
             <h2 className={`font-bold text-slate-900 leading-tight ${titleClass}`}>{meta.title}</h2>
             <p
-              className={`mt-1.5 text-slate-600 leading-snug max-w-3xl ${
+              className={`mt-1 text-slate-600 leading-snug max-w-3xl ${
                 presentationMode ? 'text-sm sm:text-base' : 'text-sm'
-              } ${variant === 'canvas' ? 'line-clamp-2 sm:line-clamp-none' : ''}`}
+              } ${variant === 'canvas' ? 'line-clamp-1 sm:line-clamp-2 lg:line-clamp-none' : ''}`}
             >
               {description}
             </p>

@@ -29,7 +29,8 @@ create table if not exists public.sessions (
     "answerPoll": true,
     "submitWord": true,
     "livePoll": true,
-    "peerFeedback": true
+    "peerFeedback": true,
+    "ideasRequireDisplayName": true
   }'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -68,6 +69,7 @@ create table if not exists public.stickies (
   status text not null default 'pending' check (status in ('pending', 'published')),
   sticky_type text not null default 'note' check (sticky_type in ('note', 'heading')),
   under_heading_id uuid references public.stickies(id) on delete set null,
+  display_scale double precision not null default 1 check (display_scale >= 0.75 and display_scale <= 2.5),
   created_at timestamptz not null default now()
 );
 
@@ -199,7 +201,7 @@ begin
     trim(p_name),
     'active',
     false,
-    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true}'::jsonb
+    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"ideasRequireDisplayName":true}'::jsonb
   )
   returning id into new_id;
 
@@ -211,7 +213,7 @@ end;
 $$;
 
 create or replace function public.get_session_join_preview(p_room_code text)
-returns table (session_id uuid, session_name text)
+returns table (session_id uuid, session_name text, ideas_require_display_name boolean)
 language plpgsql
 security definer
 set search_path = public
@@ -220,7 +222,10 @@ declare
   c text := upper(trim(p_room_code));
 begin
   return query
-  select s.id, s.name
+  select
+    s.id,
+    s.name,
+    coalesce((s.permissions->>'ideasRequireDisplayName')::boolean, true)
   from public.sessions s
   where upper(trim(s.room_code)) = c
     and s.status = 'active'
@@ -237,24 +242,37 @@ as $$
 declare
   sid uuid;
   c text := upper(trim(p_room_code));
+  require_name boolean;
+  dn text;
 begin
   if auth.uid() is null then
     raise exception 'Nicht angemeldet';
   end if;
-  if length(trim(p_display_name)) < 1 then
-    raise exception 'Name erforderlich';
-  end if;
 
-  select s.id into sid from public.sessions s where upper(trim(s.room_code)) = c limit 1;
+  select
+    s.id,
+    coalesce((s.permissions->>'ideasRequireDisplayName')::boolean, true)
+  into sid, require_name
+  from public.sessions s
+  where upper(trim(s.room_code)) = c
+    and s.status = 'active'
+  limit 1;
+
   if sid is null then
     raise exception 'Sitzung nicht gefunden';
   end if;
-  if exists (select 1 from public.sessions s where s.id = sid and s.status <> 'active') then
-    raise exception 'Sitzung ist beendet';
+
+  if require_name and length(trim(coalesce(p_display_name, ''))) < 1 then
+    raise exception 'Name erforderlich';
   end if;
 
+  dn := case
+    when require_name then trim(p_display_name)
+    else nullif(trim(coalesce(p_display_name, '')), '')
+  end;
+
   insert into public.session_members (session_id, user_id, role, display_name)
-  values (sid, auth.uid(), 'student', trim(p_display_name))
+  values (sid, auth.uid(), 'student', dn)
   on conflict (session_id, user_id) do update
     set display_name = excluded.display_name,
         role = case when session_members.role = 'teacher' then 'teacher' else 'student' end;
@@ -339,6 +357,30 @@ begin
   raise exception 'Keine Berechtigung';
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Auth: Profilzeile für jeden neuen auth.users-Eintrag (Registrierung, Anonymous)
+-- Standardrolle student – Lehrkraft: role in profiles auf teacher setzen (SQL/Table Editor)
+-- ---------------------------------------------------------------------------
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, role)
+  values (new.id, 'student')
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------------
 -- Realtime: Unter Database → Replication in Supabase die Tabellen aktivieren
@@ -562,8 +604,8 @@ grant execute on function public.join_session_as_teacher(text, text) to authenti
 grant execute on function public.get_session_join_preview(text) to anon, authenticated;
 grant execute on function public.assign_sticky_heading(uuid, uuid) to authenticated;
 
--- profiles (Rollen): User darf sich selbst lesen, nur Lehrkraft darf eigene Rolle sehen (für Guards),
--- Schreiben/Setzen passiert über Admin-Setup (oder optional Trigger/RPC).
+-- profiles (Rollen): User darf sich selbst lesen. Neue Zeilen legt Trigger handle_new_user (role=student) an;
+-- Lehrkraft: role = teacher per SQL/Table Editor setzen (oder eigener Admin-Prozess).
 create policy "profiles_select_own"
   on public.profiles for select
   using (id = auth.uid());

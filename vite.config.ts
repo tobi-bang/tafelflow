@@ -17,7 +17,7 @@ export default defineConfig(({mode}) => {
           name: 'TafelFlow – Digitale Tafel',
           short_name: 'TafelFlow',
           description:
-            'Interaktive Tafel: Zeichnen, Brainstorming, Umfragen und Wortwolke. Lokal oder mit Supabase.',
+            'Interaktive Tafel: Zeichnen, Brainstorming, Umfragen und Wortwolke – mit Supabase.',
           theme_color: '#2563eb',
           background_color: '#f8fafc',
           display: 'standalone',

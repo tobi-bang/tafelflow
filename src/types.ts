@@ -9,10 +9,15 @@ export interface SessionPermissions {
   organizeBrainstorm: boolean;
   answerPoll: boolean;
   submitWord: boolean;
-  /** Live-Abstimmung (lokaler Demo-State) */
+  /** Live-Abstimmung */
   livePoll: boolean;
-  /** Peer-Feedback (lokaler Demo-State) */
+  /** Peer-Feedback */
   peerFeedback: boolean;
+  /**
+   * Wenn true: SuS geben bei Beitritt einen Anzeigenamen an (sichtbar bei Ideen).
+   * Wenn false: Name optional; Ideen ohne Namenszeile übersichtlicher.
+   */
+  ideasRequireDisplayName: boolean;
 }
 
 export interface Session {
@@ -45,6 +50,8 @@ export interface StickyNote {
   authorId: string;
   x: number;
   y: number;
+  /** Lehrkraft: Anzeigegröße auf dem Board (1 = Standard, max. ca. 2.5) */
+  displayScale: number;
   status: 'pending' | 'published';
   createdAt: string;
   stickyType: StickyKind;
