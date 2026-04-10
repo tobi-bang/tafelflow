@@ -626,15 +626,8 @@ function DraggableBoardSticky({
             </select>
           </div>
         )}
-        <div
-          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
-        >
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-600 opacity-75 truncate max-w-[55%]">
-              {sticky.authorName}
-            </span>
-          )}
-          <div className="flex gap-1 shrink-0">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center mt-3 pt-2 border-t border-black/10">
+          <div className="flex items-center gap-0.5 justify-self-start shrink-0">
             {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
               <button
                 type="button"
@@ -670,15 +663,23 @@ function DraggableBoardSticky({
               </button>
             )}
           </div>
+          <div className="min-w-0 flex items-center justify-center px-1">
+            {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+              <span className="text-xs font-bold uppercase text-slate-600 opacity-75 truncate text-center">
+                {sticky.authorName}
+              </span>
+            )}
+          </div>
+          <div className="justify-self-end shrink-0 flex items-center justify-center min-w-9 min-h-9">
+            {sticky.stickyType === 'note' && canResize && (
+              <StickyResizeHandle
+                displayScale={displayScale}
+                onPreview={onResizePreview}
+                onCommit={onResizeCommit}
+              />
+            )}
+          </div>
         </div>
-
-        {sticky.stickyType === 'note' && canResize && (
-          <StickyResizeHandle
-            displayScale={displayScale}
-            onPreview={onResizePreview}
-            onCommit={onResizeCommit}
-          />
-        )}
       </div>
     </motion.div>
   );
@@ -743,12 +744,15 @@ function StickyResizeHandle({
     <div
       role="slider"
       aria-label="Größe der Ideenkarte"
+      aria-valuemin={0.5}
+      aria-valuemax={4}
+      aria-valuenow={displayScale}
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      className="absolute -right-1 -bottom-1 w-7 h-7 rounded-br-lg rounded-tl-md bg-slate-800/90 border border-slate-600 cursor-nwse-resize flex items-end justify-end p-0.5 shadow-md z-20 touch-none"
+      className="w-9 h-9 rounded-lg rounded-br-xl bg-slate-800/90 border border-slate-600 cursor-nwse-resize flex items-end justify-end p-1 shadow-md touch-none shrink-0"
       title="Größe ziehen"
     >
       <div className="w-2.5 h-2.5 rounded-br border-r-2 border-b-2 border-white/90 opacity-95" />
@@ -811,15 +815,8 @@ function PresentationNoteCard({
             </select>
           </div>
         )}
-        <div
-          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
-        >
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate max-w-[55%]">
-              {sticky.authorName}
-            </span>
-          )}
-          <div className="flex gap-1 shrink-0">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 items-center mt-3 pt-2 border-t border-black/10">
+          <div className="flex items-center gap-0.5 justify-self-start shrink-0">
             {isTeacher && sticky.status === 'pending' && (
               <button
                 type="button"
@@ -853,6 +850,13 @@ function PresentationNoteCard({
               >
                 <Trash2 className="w-5 h-5" />
               </button>
+            )}
+          </div>
+          <div className="min-w-0 flex items-center justify-center px-1">
+            {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+              <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate text-center">
+                {sticky.authorName}
+              </span>
             )}
           </div>
         </div>
