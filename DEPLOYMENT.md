@@ -16,24 +16,21 @@ Lokal: `.env.local` (nicht committen) analog zu `.env.example`.
 ## Supabase
 
 1. **Schema:** SQL aus `supabase/schema.sql` bzw. die Migrationen in `supabase/migrations/` der Reihe nach ausführen.
-2. **Authentication – keine öffentliche Selbstregistrierung**
-   - **Authentication → Providers → Email:** **„Enable Sign up“ / Benutzerregistrierung** deaktivieren (nur noch Anmeldung mit bestehendem Konto; `signUp` über die öffentliche API schlägt dann fehl).
-   - Optional dieselbe Prüfung für weitere Provider (z. B. Google), falls aktiv.
-   - **Email**-Provider bleibt für **Login** (E-Mail + Passwort) aktiv.
-   - **Anonymous sign-ins** aktivieren (Schülerbeitritt ohne Lehrkraft-Konto).
-3. **Lehrkräfte anlegen (nur Administrator)**  
-   Im Dashboard **Authentication → Users** einen Nutzer anlegen (**Add user** / Einladung) oder per **Supabase Admin API** / CLI. Anschließend in **`public.profiles`** die Rolle setzen:
+2. **Authentication**
+   - **Email**-Provider aktivieren (für Login/Registrierung).
+   - **Anonymous sign-ins** aktivieren (für Schülerbeitritt ohne Lehrkraft-Login).
+3. **Redirect URLs** (Authentication → URL Configuration):
+   - **Site URL:** z. B. `https://deine-app.vercel.app`
+   - **Redirect URLs** (jeweils eigene Zeile):
+     - `https://deine-app.vercel.app/auth/callback`
+     - `http://localhost:5173/auth/callback` (nur für lokale Entwicklung)
+4. **Lehrkraft-Rolle:** Neue Nutzer erhalten per Trigger die Rolle `student` in `profiles`. Lehrkräfte brauchen `role = 'teacher'`:
 
    ```sql
    update public.profiles set role = 'teacher' where id = '<user-uuid>';
    ```
 
-   (Neue Auth-User erhalten per Trigger zunächst oft `role = 'student'` – für Dashboard-Zugang explizit `teacher` setzen.)
-4. **Redirect URLs** (Authentication → URL Configuration):
-   - **Site URL:** z. B. `https://deine-app.vercel.app`
-   - **Redirect URLs** (jeweils eigene Zeile):
-     - `https://deine-app.vercel.app/auth/callback`
-     - `http://localhost:5173/auth/callback` (nur für lokale Entwicklung)
+   Die UUID findest du unter Authentication → Users.
 
 ## Vercel-Build
 

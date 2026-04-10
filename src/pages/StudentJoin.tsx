@@ -48,6 +48,7 @@ export default function StudentJoin() {
       const row = (Array.isArray(data) ? data[0] : data) as JoinPreviewRow | null;
       if (row?.session_name) {
         setSessionName(String(row.session_name));
+        // Entspricht SQL coalesce(..., true): nur explizites false = optionaler Name.
         setIdeasRequireDisplayName(row.ideas_require_display_name !== false);
         setError(null);
       } else {
@@ -62,16 +63,14 @@ export default function StudentJoin() {
     };
   }, [codeForPreview, isManual]);
 
-  /** Nur bei explizit true aus der Sitzung ist ein Name Pflicht; false/null = kein Pflichtfeld in der UI. */
-  const showNameField = ideasRequireDisplayName === true;
+  const joinSettingsReady =
+    Boolean(codeForPreview) && sessionName !== null && ideasRequireDisplayName !== null;
   const nameRequired = ideasRequireDisplayName === true;
-  const joinSettingsReady = Boolean(sessionName && ideasRequireDisplayName !== null);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = isManual ? manualCode.trim().toUpperCase() : codeFromUrl;
     if (!code) return;
-    if (!joinSettingsReady) return;
 
     const nameTrim = studentName.trim();
     if (nameRequired && !nameTrim) return;
@@ -80,9 +79,13 @@ export default function StudentJoin() {
     setError(null);
     try {
       await ensureAnonymousSession();
-      await supabase.auth.updateUser({
-        data: { display_name: nameTrim || null },
-      });
+      try {
+        await supabase.auth.updateUser({
+          data: { display_name: nameTrim || null },
+        });
+      } catch (metaErr) {
+        console.warn('updateUser display_name:', metaErr);
+      }
 
       const { data, error: joinErr } = await supabase.rpc('join_session_as_student', {
         p_room_code: code,
@@ -118,16 +121,10 @@ export default function StudentJoin() {
         <h2 className="text-2xl font-bold text-center mb-2">Schüler beitreten</h2>
         <p className="text-slate-500 text-center mb-8">
           {sessionName
-            ? `Du trittst der Sitzung „${sessionName}“ bei.${
-                ideasRequireDisplayName === true
-                  ? ' Bitte gib einen Anzeigenamen oder Teamnamen an.'
-                  : ideasRequireDisplayName === false
-                    ? ' Ein Anzeigename ist für Ideen nicht nötig.'
-                    : ''
-              }`
+            ? `Du trittst der Sitzung „${sessionName}“ bei.`
             : codeForPreview
               ? 'Raumcode wird geprüft …'
-              : 'Gib den Raumcode ein. Anzeigename nur, wenn deine Lehrkraft das vorgibt.'}
+              : 'Gib den Raumcode ein. Je nach Einstellung der Lehrkraft ist ein Anzeigename nötig oder optional.'}
         </p>
 
         {error && (
@@ -150,7 +147,7 @@ export default function StudentJoin() {
               />
             </div>
           )}
-          {showNameField && (
+          {nameRequired && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">Anzeigename oder Team</label>
               <input
@@ -163,6 +160,11 @@ export default function StudentJoin() {
                 required
               />
             </div>
+          )}
+          {!nameRequired && joinSettingsReady && ideasRequireDisplayName === false && (
+            <p className="text-sm text-slate-600">
+              In dieser Sitzung ist ein Anzeigename optional – du kannst direkt beitreten.
+            </p>
           )}
 
           <button

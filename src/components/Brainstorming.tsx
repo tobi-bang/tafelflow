@@ -15,8 +15,10 @@ interface BrainstormingProps {
   presentationMode: boolean;
 }
 
-function clampDisplayScale(v: number): number {
-  return Math.min(4, Math.max(0.5, v));
+function clampDisplayScale(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return 1.35;
+  return Math.min(4, Math.max(0.5, n));
 }
 
 export default function Brainstorming({
@@ -40,7 +42,7 @@ export default function Brainstorming({
     isTeacher || (permissions.organizeBrainstorm && permissions.moveSticky);
 
   const showAuthorOnStickies = permissions.ideasRequireDisplayName;
-  const defaultIdeaScale = permissions.ideasDefaultScale;
+  const defaultIdeaScale = clampDisplayScale(permissions.ideasDefaultScale);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id ?? null));
@@ -124,19 +126,24 @@ export default function Brainstorming({
         session_id: sessionId,
         content: newContent.trim(),
         color: selectedColor,
-        author_name: authorName,
+        author_name: authorName || 'Anonym',
         author_id: user.id,
         x: Math.random() * 400 + 50,
         y: Math.random() * 400 + 50,
         status: isTeacher ? 'published' : 'pending',
         sticky_type: 'note',
-        display_scale: clampDisplayScale(defaultIdeaScale),
+        display_scale: defaultIdeaScale,
       });
-      if (error) console.error(error);
+      if (error) {
+        console.error(error);
+        alert(`Idee konnte nicht gespeichert werden: ${error.message}`);
+        return;
+      }
       setNewContent('');
       setIsAdding(false);
     } catch (error) {
       console.error('Failed to add sticky:', error);
+      alert('Idee konnte nicht gespeichert werden.');
     }
   };
 
@@ -151,7 +158,7 @@ export default function Brainstorming({
       session_id: sessionId,
       content: headingTitle.trim(),
       color: '#cbd5e1',
-      author_name: display,
+      author_name: display || 'Lehrkraft',
       author_id: user.id,
       x: 40,
       y: 40 + headings.length * 12,
@@ -159,7 +166,11 @@ export default function Brainstorming({
       sticky_type: 'heading',
       display_scale: 1,
     });
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      alert(`Überschrift konnte nicht gespeichert werden: ${error.message}`);
+      return;
+    }
     setHeadingTitle('');
     setIsAddingHeading(false);
   };
@@ -331,7 +342,7 @@ export default function Brainstorming({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="absolute bottom-8 right-8 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
+            className="absolute bottom-8 right-8 z-40 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
           >
             <Plus className="w-6 h-6" />
           </button>
@@ -349,7 +360,7 @@ export default function Brainstorming({
           />
         )}
         {isAddingHeading && isTeacher && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -395,7 +406,7 @@ export default function Brainstorming({
           <button
             type="button"
             onClick={() => setIsAddingHeading(true)}
-            className="absolute top-2 left-2 z-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-800 shadow"
+            className="absolute top-2 left-2 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-800 shadow"
           >
             <Layers className="w-4 h-4" />
             Überschrift
@@ -447,7 +458,7 @@ export default function Brainstorming({
         <button
           type="button"
           onClick={() => setIsAdding(true)}
-          className="absolute bottom-8 right-8 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
+          className="absolute bottom-8 right-8 z-40 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
         >
           <Plus className="w-6 h-6" />
         </button>
@@ -466,7 +477,7 @@ export default function Brainstorming({
       )}
 
       {isAddingHeading && isTeacher && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -615,25 +626,15 @@ function DraggableBoardSticky({
             </select>
           </div>
         )}
-        <div className="mt-3 pt-2 border-t border-slate-500/25 flex flex-wrap items-center gap-x-2 gap-y-2 min-h-[2.75rem] relative z-30">
-          <div className="flex items-center gap-1 shrink-0 order-1">
-            {isTeacher && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }}
-                className="p-2 hover:bg-rose-500/25 rounded-lg text-rose-700 bg-white/40"
-                title="Karte löschen"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            )}
+        <div
+          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
+        >
+          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+            <span className="text-xs font-bold uppercase text-slate-600 opacity-75 truncate max-w-[55%]">
+              {sticky.authorName}
+            </span>
+          )}
+          <div className="flex gap-1 shrink-0">
             {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
               <button
                 type="button"
@@ -645,28 +646,39 @@ function DraggableBoardSticky({
                   e.stopPropagation();
                   onApprove();
                 }}
-                className="p-2 hover:bg-emerald-500/25 rounded-lg text-emerald-700 bg-white/40"
+                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
                 title="Freigeben"
               >
                 <Check className="w-5 h-5" />
               </button>
             )}
+            {isTeacher && (
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
+                title="Karte löschen"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
           </div>
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-600 opacity-80 truncate flex-1 min-w-0 text-center order-2 px-1">
-              {sticky.authorName}
-            </span>
-          )}
-          {sticky.stickyType === 'note' && canResize && (
-            <div className="order-3 ml-auto shrink-0 flex items-center">
-              <StickyResizeHandle
-                displayScale={displayScale}
-                onPreview={onResizePreview}
-                onCommit={onResizeCommit}
-              />
-            </div>
-          )}
         </div>
+
+        {sticky.stickyType === 'note' && canResize && (
+          <StickyResizeHandle
+            displayScale={displayScale}
+            onPreview={onResizePreview}
+            onCommit={onResizeCommit}
+          />
+        )}
       </div>
     </motion.div>
   );
@@ -699,7 +711,7 @@ function StickyResizeHandle({
       startScale: displayScale,
       pointerId: e.pointerId,
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -715,7 +727,7 @@ function StickyResizeHandle({
     if (!ref.current.active || e.pointerId !== ref.current.pointerId) return;
     ref.current.active = false;
     try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
@@ -736,10 +748,10 @@ function StickyResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      className="w-9 h-9 rounded-lg bg-slate-800 border-2 border-slate-600 cursor-nwse-resize flex items-center justify-center shadow-md touch-manipulation"
+      className="absolute -right-1 -bottom-1 w-7 h-7 rounded-br-lg rounded-tl-md bg-slate-800/90 border border-slate-600 cursor-nwse-resize flex items-end justify-end p-0.5 shadow-md z-20 touch-none"
       title="Größe ziehen"
     >
-      <div className="w-3 h-3 rounded-sm border-r-2 border-b-2 border-white/90 opacity-95" />
+      <div className="w-2.5 h-2.5 rounded-br border-r-2 border-b-2 border-white/90 opacity-95" />
     </div>
   );
 }
@@ -799,25 +811,15 @@ function PresentationNoteCard({
             </select>
           </div>
         )}
-        <div className="mt-3 pt-2 border-t border-slate-300/60 flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 shrink-0">
-            {isTeacher && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onDelete(sticky.id);
-                }}
-                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700 bg-white/50"
-                title="Karte löschen"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            )}
+        <div
+          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
+        >
+          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+            <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate max-w-[55%]">
+              {sticky.authorName}
+            </span>
+          )}
+          <div className="flex gap-1 shrink-0">
             {isTeacher && sticky.status === 'pending' && (
               <button
                 type="button"
@@ -829,18 +831,30 @@ function PresentationNoteCard({
                   e.stopPropagation();
                   onApprove(sticky.id);
                 }}
-                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700 bg-white/50"
+                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
                 title="Freigeben"
               >
                 <Check className="w-5 h-5" />
               </button>
             )}
+            {isTeacher && (
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void onDelete(sticky.id);
+                }}
+                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
+                title="Karte löschen"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
           </div>
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate flex-1 min-w-0 text-center">
-              {sticky.authorName}
-            </span>
-          )}
         </div>
       </div>
     </div>
@@ -865,7 +879,7 @@ function StickyFormModal({
   onPickColor: (c: string) => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

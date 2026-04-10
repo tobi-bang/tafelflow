@@ -24,7 +24,8 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     ideasRequireDisplayName: p.ideasRequireDisplayName !== false,
     ideasDefaultScale: (() => {
       const v = p.ideasDefaultScale;
-      if (typeof v === 'number' && Number.isFinite(v)) return Math.min(4, Math.max(0.5, v));
+      const n = typeof v === 'number' ? v : Number(v);
+      if (Number.isFinite(n)) return Math.min(4, Math.max(0.5, n));
       return 1.35;
     })(),
   };

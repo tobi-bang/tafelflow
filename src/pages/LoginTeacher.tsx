@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { requireTeacher } from '../lib/role';
 import { Presentation, LogIn } from 'lucide-react';
@@ -21,9 +21,10 @@ export default function LoginTeacher() {
     if (!errQ && !notice) return;
     if (errQ) setError(decodeURIComponent(errQ));
     if (notice === 'no_teacher') {
-      setInfo(
-        'Dieses Konto hat keine Lehrkraft-Rolle. Nur der Administrator kann in Supabase die Rolle „teacher“ setzen (Tabelle profiles).'
-      );
+      setInfo('Dieses Konto hat keine Lehrkraft-Rolle. Bitte in Supabase profiles.role = teacher setzen oder Support kontaktieren.');
+    }
+    if (notice === 'registered') {
+      setInfo('Registrierung erfolgreich. Wenn nötig E-Mail bestätigen. Anschließend Rolle „teacher“ setzen lassen, dann anmelden.');
     }
     const next = new URLSearchParams(searchParams);
     next.delete('error');
@@ -73,15 +74,13 @@ export default function LoginTeacher() {
       const ok = await requireTeacher();
       if (!ok) {
         await supabase.auth.signOut();
-        setError(
-          'Kein Lehrkraft-Zugriff. Neue Konten werden nur administrativ angelegt – bitte den Administrator kontaktieren.'
-        );
+        setError('Kein Lehrkraft-Zugriff. Die Rolle „teacher“ fehlt in der Datenbank (profiles) – bitte Admin informieren.');
         return;
       }
       navigate('/teacher', { replace: true });
     } catch (err) {
       console.error(err);
-      setError('Login fehlgeschlagen. E-Mail und Passwort prüfen oder den Administrator kontaktieren.');
+      setError('Login fehlgeschlagen. E-Mail/Passwort prüfen.');
     } finally {
       setLoading(false);
     }
@@ -101,12 +100,9 @@ export default function LoginTeacher() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">TafelFlow</h1>
         </div>
 
-        <h2 className="text-2xl font-bold text-center mb-2">Anmeldung Lehrkräfte</h2>
-        <p className="text-slate-500 text-center text-sm mb-2">
-          Nur für bestehende, vom Administrator angelegte Konten. Es gibt keine öffentliche Selbstregistrierung.
-        </p>
-        <p className="text-slate-400 text-center text-xs mb-8">
-          Schülerinnen und Schüler nutzen die App ohne eigenes Konto über „Schüler beitreten“.
+        <h2 className="text-2xl font-bold text-center mb-2">Lehrkraft anmelden</h2>
+        <p className="text-slate-500 text-center mb-8">
+          Geschützter Bereich für Verwaltung, Freigaben und Moderation.
         </p>
 
         {sessionBlocked && (
@@ -142,7 +138,6 @@ export default function LoginTeacher() {
               placeholder="name@schule.de"
               className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
-              autoComplete="email"
             />
           </div>
           <div>
@@ -154,7 +149,6 @@ export default function LoginTeacher() {
               placeholder="••••••••"
               className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
               required
-              autoComplete="current-password"
             />
           </div>
 
@@ -168,7 +162,10 @@ export default function LoginTeacher() {
           </button>
         </form>
 
-        <div className="mt-8 pt-8 border-t border-slate-100 text-center">
+        <div className="mt-8 pt-8 border-t border-slate-100 text-center space-y-2">
+          <Link to="/register" className="text-blue-600 font-medium hover:underline block">
+            Noch kein Konto? Registrieren
+          </Link>
           <button
             type="button"
             onClick={() => navigate('/')}
