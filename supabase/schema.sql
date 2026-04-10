@@ -30,7 +30,8 @@ create table if not exists public.sessions (
     "submitWord": true,
     "livePoll": true,
     "peerFeedback": true,
-    "ideasRequireDisplayName": true
+    "ideasRequireDisplayName": true,
+    "ideasDefaultScale": 1.35
   }'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -69,7 +70,7 @@ create table if not exists public.stickies (
   status text not null default 'pending' check (status in ('pending', 'published')),
   sticky_type text not null default 'note' check (sticky_type in ('note', 'heading')),
   under_heading_id uuid references public.stickies(id) on delete set null,
-  display_scale double precision not null default 1 check (display_scale >= 0.75 and display_scale <= 2.5),
+  display_scale double precision not null default 1 check (display_scale >= 0.5 and display_scale <= 4),
   created_at timestamptz not null default now()
 );
 
@@ -201,7 +202,7 @@ begin
     trim(p_name),
     'active',
     false,
-    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"ideasRequireDisplayName":true}'::jsonb
+    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
   )
   returning id into new_id;
 

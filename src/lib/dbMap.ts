@@ -22,6 +22,11 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     livePoll: p.livePoll !== false,
     peerFeedback: p.peerFeedback !== false,
     ideasRequireDisplayName: p.ideasRequireDisplayName !== false,
+    ideasDefaultScale: (() => {
+      const v = p.ideasDefaultScale;
+      if (typeof v === 'number' && Number.isFinite(v)) return Math.min(4, Math.max(0.5, v));
+      return 1.35;
+    })(),
   };
 }
 
@@ -56,7 +61,7 @@ export function rowToSticky(row: Record<string, unknown>): StickyNote {
   const uh = row.under_heading_id;
   const ds = row.display_scale;
   const displayScale =
-    typeof ds === 'number' && !Number.isNaN(ds) ? Math.min(2.5, Math.max(0.75, ds)) : 1;
+    typeof ds === 'number' && !Number.isNaN(ds) ? Math.min(4, Math.max(0.5, ds)) : 1;
   return {
     id: String(row.id),
     content: String(row.content ?? ''),

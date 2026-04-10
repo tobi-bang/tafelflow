@@ -200,9 +200,19 @@ export default function SessionView() {
 
   const joinUrl = `${window.location.origin}/student/${session.room_code}`;
 
-  const togglePermission = async (permission: keyof Session['permissions']) => {
+  type BooleanSessionPermission = Exclude<keyof Session['permissions'], 'ideasDefaultScale'>;
+
+  const togglePermission = async (permission: BooleanSessionPermission) => {
     if (!session || !isTeacher) return;
     const newPermissions = { ...session.permissions, [permission]: !session.permissions[permission] };
+    const { error } = await supabase.from('sessions').update({ permissions: newPermissions }).eq('id', session.id);
+    if (error) console.error(error);
+  };
+
+  const updateIdeasDefaultScale = async (value: number) => {
+    if (!session || !isTeacher) return;
+    const clamped = Math.min(4, Math.max(0.5, value));
+    const newPermissions = { ...session.permissions, ideasDefaultScale: clamped };
     const { error } = await supabase.from('sessions').update({ permissions: newPermissions }).eq('id', session.id);
     if (error) console.error(error);
   };
@@ -804,6 +814,27 @@ export default function SessionView() {
                   active={session.permissions.ideasRequireDisplayName}
                   onClick={() => togglePermission('ideasRequireDisplayName')}
                 />
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 text-left">
+                  <label htmlFor="ideas-default-scale" className="font-semibold text-slate-800 block mb-2">
+                    Standardgröße neuer Ideen (Board)
+                  </label>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Gilt für neu erstellte Karten. Einzelne Karten können am Board weiter vergrößert oder verkleinert werden.
+                  </p>
+                  <input
+                    id="ideas-default-scale"
+                    type="range"
+                    min={0.75}
+                    max={2.5}
+                    step={0.05}
+                    value={session.permissions.ideasDefaultScale}
+                    onChange={(e) => void updateIdeasDefaultScale(Number(e.target.value))}
+                    className="w-full accent-blue-600"
+                  />
+                  <div className="text-sm text-slate-600 mt-2 tabular-nums">
+                    {Math.round(session.permissions.ideasDefaultScale * 100)} % relativ zur Basisgröße
+                  </div>
+                </div>
                 <PermissionToggle label="Umfragen beantworten" active={session.permissions.answerPoll} onClick={() => togglePermission('answerPoll')} />
                 <PermissionToggle label="Wörter einsenden" active={session.permissions.submitWord} onClick={() => togglePermission('submitWord')} />
                 <PermissionToggle label="Live-Abstimmung" active={session.permissions.livePoll} onClick={() => togglePermission('livePoll')} />

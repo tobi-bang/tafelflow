@@ -18,6 +18,8 @@ export interface SessionPermissions {
    * Wenn false: Name optional; Ideen ohne Namenszeile übersichtlicher.
    */
   ideasRequireDisplayName: boolean;
+  /** Standard-display_scale (0.5–4) für neu erstellte Ideenkarten. */
+  ideasDefaultScale: number;
 }
 
 export interface Session {
@@ -50,7 +52,7 @@ export interface StickyNote {
   authorId: string;
   x: number;
   y: number;
-  /** Lehrkraft: Anzeigegröße auf dem Board (1 = Standard, max. ca. 2.5) */
+  /** Anzeigegröße auf dem Board (Skalierung, typ. 0.5–4) */
   displayScale: number;
   status: 'pending' | 'published';
   createdAt: string;
