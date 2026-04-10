@@ -2,11 +2,22 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } fr
 import { supabase } from '../lib/supabase';
 import { rowToSticky } from '../lib/dbMap';
 import type { StickyNote, SessionPermissions } from '../types';
-import { Plus, Trash2, Check, Layers, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Check, Layers, GripVertical, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 
 /** Basisbreite der Ideenkarte in px (wird mit display_scale multipliziert). */
 const IDEA_CARD_BASE_PX = 320;
+
+/** Tafel-/Präsentationsmodus: eigene Maße (unabhängig vom Arbeitsboard und display_scale). */
+const BOARD_PRESENTATION = {
+  /** Mindestbreite einer Spalte (Überschrift + Karten) */
+  columnMinPx: 280,
+  gridGap: 'gap-5 md:gap-6',
+  noteText: 'text-[1.0625rem] sm:text-lg md:text-xl leading-snug',
+  cardMinH: 'min-h-[5.75rem]',
+  cardPad: 'p-4 md:p-5',
+  areaPad: 'p-4 md:p-6 lg:p-8',
+} as const;
 
 interface BrainstormingProps {
   sessionId: string;
@@ -19,6 +30,90 @@ function clampDisplayScale(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return 1.35;
   return Math.min(4, Math.max(0.5, n));
+}
+
+function StickyHeadingMenu({
+  currentHeadingId,
+  headings,
+  onAssign,
+}: {
+  currentHeadingId: string | null;
+  headings: StickyNote[];
+  onAssign: (headingId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', close, true);
+    return () => document.removeEventListener('pointerdown', close, true);
+  }, [open]);
+
+  const label = useMemo(() => {
+    if (!currentHeadingId) return 'Ohne Überschrift';
+    const h = headings.find((x) => x.id === currentHeadingId);
+    if (!h) return 'Überschrift';
+    const t = h.content.trim();
+    return t.length > 14 ? `${t.slice(0, 12)}…` : t;
+  }, [currentHeadingId, headings]);
+
+  return (
+    <div className="relative shrink-0" ref={rootRef}>
+      <button
+        type="button"
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        className="inline-flex max-w-[7.5rem] items-center gap-0.5 rounded-lg border border-slate-400/70 bg-white/90 px-1.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm hover:bg-white"
+        title="Unter Überschrift einordnen"
+      >
+        <Layers className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+        <span className="min-w-0 truncate">{label}</span>
+        <ChevronDown className={`h-3 w-3 shrink-0 opacity-70 ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-full left-0 z-[80] mb-1 min-w-[11.5rem] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full min-h-10 items-center px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+            onClick={() => {
+              onAssign(null);
+              setOpen(false);
+            }}
+          >
+            Ohne Überschrift
+          </button>
+          {headings.map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              className={`flex w-full min-h-10 items-center px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                h.id === currentHeadingId ? 'bg-blue-50 font-medium text-blue-900' : 'text-slate-800'
+              }`}
+              onClick={() => {
+                onAssign(h.id);
+                setOpen(false);
+              }}
+            >
+              {h.content}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Brainstorming({
@@ -229,113 +324,96 @@ export default function Brainstorming({
     await supabase.from('stickies').update({ status: 'published' }).eq('id', id);
   };
 
-  const presentationScale = presentationMode ? 'text-lg' : '';
-
   if (presentationMode) {
     const notes = visible.filter((s) => s.stickyType === 'note');
     const orphan = notes.filter((n) => !n.underHeadingId);
     const sortedHeadings = [...headings].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const hasHeadingColumns = sortedHeadings.length > 0;
+    const columnGridStyle = {
+      gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${BOARD_PRESENTATION.columnMinPx}px), 1fr))`,
+    } as const;
 
     return (
-      <div className="relative w-full h-full overflow-hidden bg-slate-100 flex flex-col">
-        <div className="shrink-0 px-6 py-3 flex flex-wrap gap-3 items-center border-b border-slate-200 bg-white/90">
-          {isTeacher && (
-            <button
-              type="button"
-              onClick={() => setIsAddingHeading(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700 text-white font-semibold hover:bg-slate-800"
-            >
-              <Layers className="w-4 h-4" />
-              Überschrift
-            </button>
-          )}
-          {canModerate && (
-            <span className="text-sm text-slate-500">
-              Ideen per Auswahl einer Spalte zuordnen {isTeacher ? '(Lehrkraft)' : '(Moderation)'}
-            </span>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-x-auto p-4">
-          <div className="flex gap-4 h-full min-h-[min(60vh,480px)]">
-            <div className="min-w-[300px] max-w-[400px] flex flex-col gap-3 rounded-2xl bg-white/80 border border-slate-200 p-4 shadow-sm">
-              <h3 className={`font-bold text-slate-500 uppercase tracking-wide ${presentationMode ? 'text-base' : 'text-sm'}`}>
-                Sammeln
-              </h3>
-              <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-                {orphan.map((sticky) => (
-                  <Fragment key={sticky.id}>
-                    <PresentationNoteCard
-                      sticky={sticky}
-                      presentationScale={presentationScale}
-                      isTeacher={isTeacher}
-                      canModerate={canModerate}
-                      headings={sortedHeadings}
-                      onApprove={approveSticky}
-                      onDelete={deleteSticky}
-                      onAssign={assignUnderHeading}
-                      showAuthorOnStickies={showAuthorOnStickies}
-                    />
-                  </Fragment>
-                ))}
-                {orphan.length === 0 && (
-                  <p className="text-slate-400 text-sm">Noch keine freien Ideen.</p>
-                )}
-              </div>
+      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-gradient-to-b from-slate-100 to-slate-200/90">
+        <header className="shrink-0 border-b border-slate-200/90 bg-white/95 px-4 py-3 shadow-sm md:px-6 md:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold tracking-tight text-slate-800 md:text-lg">Ideen · Tafelansicht</h2>
+              <p className="mt-0.5 max-w-2xl text-xs text-slate-500 md:text-sm">
+                Zum Verschieben, Freigeben, Zuordnen und Löschen bitte den{' '}
+                <span className="font-semibold text-slate-600">Arbeitsmodus</span> nutzen.
+              </p>
             </div>
-
-            {sortedHeadings.map((h) => (
-              <div
-                key={h.id}
-                className="min-w-[320px] max-w-[440px] flex flex-col gap-3 rounded-2xl bg-white/90 border border-slate-200 p-4 shadow-sm"
+            {isTeacher && (
+              <button
+                type="button"
+                onClick={() => setIsAddingHeading(true)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-slate-900"
               >
-                <div className="rounded-xl bg-slate-200 px-4 py-3 flex justify-between items-start gap-2">
-                  <span
-                    className={`font-bold text-slate-900 ${presentationMode ? '' : 'text-lg'}`}
-                    style={presentationMode ? { fontSize: 'calc(1.35rem + 3pt)' } : { fontSize: 'calc(1.15rem + 3pt)' }}
-                  >
-                    {h.content}
-                  </span>
-                  {isTeacher && (
-                    <button
-                      type="button"
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteSticky(h.id);
-                      }}
-                      className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700 shrink-0 z-10"
-                      title="Überschrift löschen"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+                <Layers className="h-4 w-4" aria-hidden />
+                Überschrift
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className={`min-h-0 flex-1 overflow-auto ${BOARD_PRESENTATION.areaPad}`}>
+          {hasHeadingColumns ? (
+            <div
+              className={`grid min-h-[min(70vh,720px)] ${BOARD_PRESENTATION.gridGap}`}
+              style={columnGridStyle}
+            >
+              <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-300/60 bg-white shadow-md">
+                <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Ohne Spalte</h3>
+                </div>
+                <div className={`flex min-h-0 flex-1 flex-col ${BOARD_PRESENTATION.gridGap} overflow-y-auto p-4`}>
+                  {orphan.map((sticky) => (
+                    <PresentationNoteCard key={sticky.id} sticky={sticky} showAuthorOnStickies={showAuthorOnStickies} />
+                  ))}
+                  {orphan.length === 0 && (
+                    <p className="py-6 text-center text-sm text-slate-400">Keine Ideen ohne Spalte.</p>
                   )}
                 </div>
-                <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-                  {notes
-                    .filter((n) => n.underHeadingId === h.id)
-                    .map((sticky) => (
-                      <Fragment key={sticky.id}>
+              </section>
+
+              {sortedHeadings.map((h) => (
+                <section
+                  key={h.id}
+                  className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-300/60 bg-white shadow-md"
+                >
+                  <div className="shrink-0 border-b border-slate-200 bg-slate-200/90 px-4 py-3">
+                    <h3 className="text-base font-bold leading-snug text-slate-900 md:text-lg">{h.content}</h3>
+                  </div>
+                  <div className={`flex min-h-0 flex-1 flex-col ${BOARD_PRESENTATION.gridGap} overflow-y-auto p-4`}>
+                    {notes
+                      .filter((n) => n.underHeadingId === h.id)
+                      .map((sticky) => (
                         <PresentationNoteCard
+                          key={sticky.id}
                           sticky={sticky}
-                          presentationScale={presentationScale}
-                          isTeacher={isTeacher}
-                          canModerate={canModerate}
-                          headings={sortedHeadings}
-                          onApprove={approveSticky}
-                          onDelete={deleteSticky}
-                          onAssign={assignUnderHeading}
                           showAuthorOnStickies={showAuthorOnStickies}
                         />
-                      </Fragment>
-                    ))}
+                      ))}
+                    {notes.filter((n) => n.underHeadingId === h.id).length === 0 && (
+                      <p className="py-6 text-center text-sm text-slate-400">Noch keine Ideen in dieser Spalte.</p>
+                    )}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="mx-auto grid w-full max-w-[1680px] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:gap-6 xl:grid-cols-4 2xl:grid-cols-5">
+              {notes.map((sticky) => (
+                <PresentationNoteCard key={sticky.id} sticky={sticky} showAuthorOnStickies={showAuthorOnStickies} />
+              ))}
+              {notes.length === 0 && (
+                <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white/60 py-16 text-center text-slate-500">
+                  Noch keine Ideen. Neue Ideen können über das Plus angelegt werden (sofern erlaubt).
                 </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         {canAdd && (
@@ -581,7 +659,7 @@ function DraggableBoardSticky({
         className={`shadow-lg relative ${
           isHeading
             ? 'min-w-[300px] max-w-[480px] px-5 py-4 rounded-b-xl rounded-tr-xl bg-slate-200 border-2 border-slate-400'
-            : `rounded-b-xl rounded-tr-xl border-2 border-slate-300/80 ${
+            : `flex min-h-[10.5rem] flex-col rounded-b-xl rounded-tr-xl border-2 border-slate-300/80 ${
                 sticky.status === 'pending' ? 'ring-4 ring-blue-400 ring-opacity-40' : ''
               }`
         }`}
@@ -592,42 +670,31 @@ function DraggableBoardSticky({
           transformOrigin: 'top left',
         }}
       >
-        <p
-          className={`text-slate-900 font-medium break-words mb-2 ${isHeading ? 'font-bold' : ''}`}
-          style={{
-            fontSize: isHeading ? 'calc(1.2rem + 4pt)' : 'calc(1.05rem + 4pt)',
-            lineHeight: 1.35,
-          }}
-        >
-          {sticky.content}
-        </p>
-        {sticky.stickyType === 'note' && canModerate && (
-          <div
-            className="mt-2"
-            onPointerDown={(e) => {
-              e.stopPropagation();
+        {isHeading ? (
+          <p
+            className="text-slate-900 font-bold break-words"
+            style={{
+              fontSize: 'calc(1.2rem + 4pt)',
+              lineHeight: 1.35,
             }}
           >
-            <label className="sr-only" htmlFor={`col-${sticky.id}`}>
-              Spalte
-            </label>
-            <select
-              id={`col-${sticky.id}`}
-              value={sticky.underHeadingId ?? ''}
-              onChange={(e) => onAssign(e.target.value || null)}
-              className="w-full text-sm rounded-lg border border-slate-300 bg-white/95 px-2 py-2"
+            {sticky.content}
+          </p>
+        ) : (
+          <div className="flex min-h-[7.5rem] flex-1 flex-col justify-center px-4 pb-2 pt-4">
+            <p
+              className="text-slate-900 break-words font-semibold leading-tight tracking-tight"
+              style={{
+                fontSize: 'clamp(1.35rem, 0.35rem + 2.8vw, 2rem)',
+                lineHeight: 1.2,
+              }}
             >
-              <option value="">Ohne Überschrift</option>
-              {headings.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.content}
-                </option>
-              ))}
-            </select>
+              {sticky.content}
+            </p>
           </div>
         )}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center mt-3 pt-2 border-t border-black/10">
-          <div className="flex items-center gap-0.5 justify-self-start shrink-0">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center border-t border-black/10 px-2 pb-2 pt-2">
+          <div className="flex max-w-[min(100%,11rem)] flex-wrap items-center gap-0.5 justify-self-start shrink-0">
             {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
               <button
                 type="button"
@@ -661,6 +728,13 @@ function DraggableBoardSticky({
               >
                 <Trash2 className="w-5 h-5" />
               </button>
+            )}
+            {sticky.stickyType === 'note' && canModerate && (
+              <StickyHeadingMenu
+                currentHeadingId={sticky.underHeadingId}
+                headings={headings}
+                onAssign={onAssign}
+              />
             )}
           </div>
           <div className="min-w-0 flex items-center justify-center px-1">
@@ -760,108 +834,36 @@ function StickyResizeHandle({
   );
 }
 
+/** Nur Tafelmodus: kompakte Lesekarte ohne Bearbeitungs-UI (kein display_scale-Transform). */
 function PresentationNoteCard({
   sticky,
-  presentationScale,
-  isTeacher,
-  canModerate,
-  headings,
-  onApprove,
-  onDelete,
-  onAssign,
   showAuthorOnStickies,
 }: {
   sticky: StickyNote;
-  presentationScale: string;
-  isTeacher: boolean;
-  canModerate: boolean;
-  headings: StickyNote[];
-  onApprove: (id: string) => void;
-  onDelete: (id: string) => void;
-  onAssign: (id: string, headingId: string | null) => void;
   showAuthorOnStickies: boolean;
 }) {
-  const noteTextSize = presentationScale ? 'calc(1.2rem + 4pt)' : 'calc(1.05rem + 4pt)';
-
+  const pending = sticky.status === 'pending';
   return (
-    <div className="flex flex-col gap-1 w-full">
-      <div
-        className={`rounded-xl p-5 border-2 border-slate-200 shadow-sm ${presentationScale} ${
-          sticky.status === 'pending' ? 'ring-2 ring-blue-400' : ''
-        }`}
-        style={{
-          backgroundColor: sticky.color,
-          transform: `scale(${sticky.displayScale})`,
-          transformOrigin: 'top left',
-          minWidth: IDEA_CARD_BASE_PX,
-        }}
-      >
-        <p className="text-slate-900 font-medium break-words leading-snug" style={{ fontSize: noteTextSize }}>
-          {sticky.content}
+    <article
+      className={`flex w-full min-w-0 flex-col rounded-xl border border-slate-300/70 shadow-md ${BOARD_PRESENTATION.cardMinH} ${BOARD_PRESENTATION.cardPad} ${
+        pending ? 'ring-2 ring-amber-400/80 ring-offset-2 ring-offset-white' : ''
+      }`}
+      style={{ backgroundColor: sticky.color }}
+    >
+      {pending && (
+        <span className="mb-2 inline-flex w-fit rounded-md bg-amber-100/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+          Ausstehend
+        </span>
+      )}
+      <p className={`text-slate-900 ${BOARD_PRESENTATION.noteText} font-semibold break-words [text-wrap:pretty]`}>
+        {sticky.content}
+      </p>
+      {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+        <p className="mt-3 border-t border-black/10 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-600/90">
+          {sticky.authorName}
         </p>
-        {canModerate && (
-          <div className="mt-3" onPointerDown={(e) => e.stopPropagation()}>
-            <select
-              value={sticky.underHeadingId ?? ''}
-              onChange={(e) => onAssign(sticky.id, e.target.value || null)}
-              className="w-full text-sm rounded-lg border border-slate-300 bg-white/90 px-2 py-2"
-            >
-              <option value="">Sammeln / keine Spalte</option>
-              {headings.map((h) => (
-                <option key={h.id} value={h.id}>
-                  Unter: {h.content}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 items-center mt-3 pt-2 border-t border-black/10">
-          <div className="flex items-center gap-0.5 justify-self-start shrink-0">
-            {isTeacher && sticky.status === 'pending' && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onApprove(sticky.id);
-                }}
-                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
-                title="Freigeben"
-              >
-                <Check className="w-5 h-5" />
-              </button>
-            )}
-            {isTeacher && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onDelete(sticky.id);
-                }}
-                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
-                title="Karte löschen"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-          <div className="min-w-0 flex items-center justify-center px-1">
-            {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-              <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate text-center">
-                {sticky.authorName}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </article>
   );
 }
 
