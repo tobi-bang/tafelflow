@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase';
 import { requireTeacher } from '../lib/role';
 
 /**
- * OAuth / E-Mail-Bestätigung (PKCE): Supabase leitet mit ?code= hierher.
- * In Supabase Dashboard → Authentication → URL Configuration → Redirect URLs die Produktions-URL ergänzen.
+ * Auth-Redirect (PKCE): Supabase leitet mit ?code= hierher (z. B. Einladungslink, Passwort-Reset, Magic Link).
+ * Keine Selbstregistrierung in der App – Redirect-URL in Supabase unter Authentication → URL Configuration eintragen.
  */
 export default function AuthCallback() {
   const navigate = useNavigate();

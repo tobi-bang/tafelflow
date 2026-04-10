@@ -16,7 +16,7 @@ export default function Home() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">TafelFlow</h1>
         </div>
         <div className="text-xs text-slate-500 font-medium hidden sm:block">
-          Geschützt für Lehrkräfte · reduziert für SuS
+          Lehrkräfte: nur Anmeldung · SuS ohne eigenes Konto
         </div>
       </header>
 
@@ -26,7 +26,8 @@ export default function Home() {
             Starte jetzt <span className="text-blue-600">den richtigen Zugang</span>.
           </h2>
           <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto mb-10">
-            Lehrkräfte verwalten und geben Inhalte frei. Schülerinnen und Schüler sehen nur, was im Unterricht freigeschaltet ist.
+            Lehrkräfte verwalten Sitzungen und Freigaben. Neue Lehrkraft-Konten werden nur administrativ angelegt – nicht über diese App.
+            Schülerinnen und Schüler arbeiten ohne eigenes Benutzerkonto.
           </p>
 
           <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto text-left">
@@ -45,9 +46,9 @@ export default function Home() {
                     <ShieldCheck className="w-5 h-5 text-blue-600 opacity-80" />
                   </div>
                   <p className="text-slate-600 mt-1">
-                    Geschütztes Dashboard: Sitzung erstellen, Inhalte freigeben, sperren und Ergebnisse exportieren.
+                    Geschütztes Dashboard: Sitzungen, Freigaben, Sperren und Exporte. Nur mit vom Administrator angelegtem Konto.
                   </p>
-                  <p className="text-sm text-slate-400 mt-3">E-Mail + Passwort · Registrierung über „Noch kein Konto?“</p>
+                  <p className="text-sm text-slate-400 mt-3">E-Mail + Passwort · keine Selbstregistrierung</p>
                 </div>
               </div>
             </button>
@@ -66,7 +67,7 @@ export default function Home() {
                   <p className="text-slate-600 mt-1">
                     Raumcode + Name. Du siehst nur freigegebene Bereiche – ohne Verwaltungsfunktionen.
                   </p>
-                  <p className="text-sm text-slate-400 mt-3">Kein Login nötig</p>
+                  <p className="text-sm text-slate-400 mt-3">Kein Benutzerkonto – nur Raumcode</p>
                 </div>
               </div>
             </button>

@@ -615,32 +615,8 @@ function DraggableBoardSticky({
             </select>
           </div>
         )}
-        <div
-          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
-        >
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-600 opacity-75 truncate max-w-[55%]">
-              {sticky.authorName}
-            </span>
-          )}
-          <div className="flex gap-1 shrink-0">
-            {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onApprove();
-                }}
-                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
-                title="Freigeben"
-              >
-                <Check className="w-5 h-5" />
-              </button>
-            )}
+        <div className="mt-3 pt-2 border-t border-slate-500/25 flex flex-wrap items-center gap-x-2 gap-y-2 min-h-[2.75rem] relative z-30">
+          <div className="flex items-center gap-1 shrink-0 order-1">
             {isTeacher && (
               <button
                 type="button"
@@ -652,22 +628,45 @@ function DraggableBoardSticky({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
+                className="p-2 hover:bg-rose-500/25 rounded-lg text-rose-700 bg-white/40"
                 title="Karte löschen"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
             )}
+            {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove();
+                }}
+                className="p-2 hover:bg-emerald-500/25 rounded-lg text-emerald-700 bg-white/40"
+                title="Freigeben"
+              >
+                <Check className="w-5 h-5" />
+              </button>
+            )}
           </div>
+          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+            <span className="text-xs font-bold uppercase text-slate-600 opacity-80 truncate flex-1 min-w-0 text-center order-2 px-1">
+              {sticky.authorName}
+            </span>
+          )}
+          {sticky.stickyType === 'note' && canResize && (
+            <div className="order-3 ml-auto shrink-0 flex items-center">
+              <StickyResizeHandle
+                displayScale={displayScale}
+                onPreview={onResizePreview}
+                onCommit={onResizeCommit}
+              />
+            </div>
+          )}
         </div>
-
-        {sticky.stickyType === 'note' && canResize && (
-          <StickyResizeHandle
-            displayScale={displayScale}
-            onPreview={onResizePreview}
-            onCommit={onResizeCommit}
-          />
-        )}
       </div>
     </motion.div>
   );
@@ -700,7 +699,7 @@ function StickyResizeHandle({
       startScale: displayScale,
       pointerId: e.pointerId,
     };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -716,7 +715,7 @@ function StickyResizeHandle({
     if (!ref.current.active || e.pointerId !== ref.current.pointerId) return;
     ref.current.active = false;
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
@@ -737,10 +736,10 @@ function StickyResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      className="absolute -right-1 -bottom-1 w-7 h-7 rounded-br-lg rounded-tl-md bg-slate-800/90 border border-slate-600 cursor-nwse-resize flex items-end justify-end p-0.5 shadow-md z-20 touch-none"
+      className="w-9 h-9 rounded-lg bg-slate-800 border-2 border-slate-600 cursor-nwse-resize flex items-center justify-center shadow-md touch-manipulation"
       title="Größe ziehen"
     >
-      <div className="w-2.5 h-2.5 rounded-br border-r-2 border-b-2 border-white/90 opacity-95" />
+      <div className="w-3 h-3 rounded-sm border-r-2 border-b-2 border-white/90 opacity-95" />
     </div>
   );
 }
@@ -800,32 +799,8 @@ function PresentationNoteCard({
             </select>
           </div>
         )}
-        <div
-          className={`flex justify-between items-center mt-3 gap-2 ${showAuthorOnStickies ? '' : 'justify-end'}`}
-        >
-          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-            <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate max-w-[55%]">
-              {sticky.authorName}
-            </span>
-          )}
-          <div className="flex gap-1 shrink-0">
-            {isTeacher && sticky.status === 'pending' && (
-              <button
-                type="button"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onApprove(sticky.id);
-                }}
-                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
-                title="Freigeben"
-              >
-                <Check className="w-5 h-5" />
-              </button>
-            )}
+        <div className="mt-3 pt-2 border-t border-slate-300/60 flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 shrink-0">
             {isTeacher && (
               <button
                 type="button"
@@ -837,13 +812,35 @@ function PresentationNoteCard({
                   e.stopPropagation();
                   void onDelete(sticky.id);
                 }}
-                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
+                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700 bg-white/50"
                 title="Karte löschen"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
             )}
+            {isTeacher && sticky.status === 'pending' && (
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove(sticky.id);
+                }}
+                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700 bg-white/50"
+                title="Freigeben"
+              >
+                <Check className="w-5 h-5" />
+              </button>
+            )}
           </div>
+          {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
+            <span className="text-xs font-bold uppercase text-slate-500 opacity-75 truncate flex-1 min-w-0 text-center">
+              {sticky.authorName}
+            </span>
+          )}
         </div>
       </div>
     </div>

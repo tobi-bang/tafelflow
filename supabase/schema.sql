@@ -360,7 +360,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Auth: Profilzeile für jeden neuen auth.users-Eintrag (Registrierung, Anonymous)
+-- Auth: Profilzeile für jeden neuen auth.users-Eintrag (z. B. Admin-Anlage, Invite, Anonymous)
 -- Standardrolle student – Lehrkraft: role in profiles auf teacher setzen (SQL/Table Editor)
 -- ---------------------------------------------------------------------------
 

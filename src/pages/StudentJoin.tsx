@@ -62,12 +62,16 @@ export default function StudentJoin() {
     };
   }, [codeForPreview, isManual]);
 
-  const nameRequired = ideasRequireDisplayName !== false;
+  /** Nur bei explizit true aus der Sitzung ist ein Name Pflicht; false/null = kein Pflichtfeld in der UI. */
+  const showNameField = ideasRequireDisplayName === true;
+  const nameRequired = ideasRequireDisplayName === true;
+  const joinSettingsReady = Boolean(sessionName && ideasRequireDisplayName !== null);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = isManual ? manualCode.trim().toUpperCase() : codeFromUrl;
     if (!code) return;
+    if (!joinSettingsReady) return;
 
     const nameTrim = studentName.trim();
     if (nameRequired && !nameTrim) return;
@@ -114,10 +118,16 @@ export default function StudentJoin() {
         <h2 className="text-2xl font-bold text-center mb-2">Schüler beitreten</h2>
         <p className="text-slate-500 text-center mb-8">
           {sessionName
-            ? `Du trittst der Sitzung „${sessionName}“ bei.`
+            ? `Du trittst der Sitzung „${sessionName}“ bei.${
+                ideasRequireDisplayName === true
+                  ? ' Bitte gib einen Anzeigenamen oder Teamnamen an.'
+                  : ideasRequireDisplayName === false
+                    ? ' Ein Anzeigename ist für Ideen nicht nötig.'
+                    : ''
+              }`
             : codeForPreview
               ? 'Raumcode wird geprüft …'
-              : 'Gib den Raumcode ein. Je nach Einstellung der Lehrkraft ist ein Anzeigename nötig oder optional.'}
+              : 'Gib den Raumcode ein. Anzeigename nur, wenn deine Lehrkraft das vorgibt.'}
         </p>
 
         {error && (
@@ -140,29 +150,29 @@ export default function StudentJoin() {
               />
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              {nameRequired ? 'Anzeigename oder Team' : 'Anzeigename (optional)'}
-            </label>
-            <input
-              autoFocus={!isManual}
-              type="text"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              placeholder={nameRequired ? 'z. B. Team Blau' : 'Leer lassen, wenn keine Namen nötig sind'}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-              required={nameRequired}
-            />
-            {!nameRequired && ideasRequireDisplayName === false && (
-              <p className="text-xs text-slate-500 mt-2">
-                In dieser Sitzung sind die Ideen ohne Namenszeile übersichtlicher – ein Name ist freiwillig.
-              </p>
-            )}
-          </div>
+          {showNameField && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Anzeigename oder Team</label>
+              <input
+                autoFocus={!isManual}
+                type="text"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                placeholder="z. B. Team Blau"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                required
+              />
+            </div>
+          )}
 
           <button
             type="submit"
-            disabled={loading || !codeForPreview || (nameRequired && !studentName.trim())}
+            disabled={
+              loading ||
+              !codeForPreview ||
+              !joinSettingsReady ||
+              (nameRequired && !studentName.trim())
+            }
             className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {loading ? 'Beitreten…' : 'Sitzung beitreten'}

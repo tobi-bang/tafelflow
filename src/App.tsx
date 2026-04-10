@@ -6,7 +6,6 @@ import SessionView from './pages/SessionView';
 import Home from './pages/Home';
 import StudentJoin from './pages/StudentJoin';
 import LoginTeacher from './pages/LoginTeacher';
-import RegisterTeacher from './pages/RegisterTeacher';
 import AuthCallback from './pages/AuthCallback';
 import SupabaseConfigMissing from './components/SupabaseConfigMissing';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -105,7 +104,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<LoginTeacher />} />
-          <Route path="/register" element={<RegisterTeacher />} />
+          <Route path="/register" element={<Navigate to="/login" replace />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route
             path="/teacher"
