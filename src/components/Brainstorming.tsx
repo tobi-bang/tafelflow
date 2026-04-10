@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { rowToSticky } from '../lib/dbMap';
 import type { StickyNote, SessionPermissions } from '../types';
@@ -19,6 +20,40 @@ const BOARD_PRESENTATION = {
   areaPad: 'p-4 md:p-6 lg:p-8',
 } as const;
 
+function StickyHeadingMenuList({
+  currentHeadingId,
+  headings,
+  onPick,
+}: {
+  currentHeadingId: string | null;
+  headings: StickyNote[];
+  onPick: (headingId: string | null) => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className="flex w-full min-h-10 items-center px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
+        onClick={() => onPick(null)}
+      >
+        Ohne Überschrift
+      </button>
+      {headings.map((h) => (
+        <button
+          key={h.id}
+          type="button"
+          className={`flex w-full min-h-10 items-center px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+            h.id === currentHeadingId ? 'bg-blue-50 font-medium text-blue-900' : 'text-slate-800'
+          }`}
+          onClick={() => onPick(h.id)}
+        >
+          {h.content}
+        </button>
+      ))}
+    </>
+  );
+}
+
 interface BrainstormingProps {
   sessionId: string;
   isTeacher: boolean;
@@ -36,18 +71,51 @@ function StickyHeadingMenu({
   currentHeadingId,
   headings,
   onAssign,
+  menuPlacement = 'above',
 }: {
   currentHeadingId: string | null;
   headings: StickyNote[];
   onAssign: (headingId: string | null) => void;
+  /** „above“: Menü über dem Button (Board). „below“: nach unten (Tafelmodus, weniger Abschneiden in Spalten). */
+  menuPlacement?: 'above' | 'below';
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const portalRef = useRef<HTMLDivElement | null>(null);
+  const [portalRect, setPortalRect] = useState<{ top: number; left: number; minW: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || menuPlacement !== 'below' || !triggerRef.current) {
+      setPortalRect(null);
+      return;
+    }
+    const r = triggerRef.current.getBoundingClientRect();
+    setPortalRect({ top: r.bottom + 6, left: r.left, minW: Math.max(184, r.width) });
+  }, [open, menuPlacement]);
+
+  useEffect(() => {
+    if (!open || menuPlacement !== 'below') return;
+    const measure = () => {
+      if (!triggerRef.current) return;
+      const r = triggerRef.current.getBoundingClientRect();
+      setPortalRect({ top: r.bottom + 6, left: r.left, minW: Math.max(184, r.width) });
+    };
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [open, menuPlacement]);
 
   useEffect(() => {
     if (!open) return;
     const close = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t)) return;
+      if (portalRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener('pointerdown', close, true);
     return () => document.removeEventListener('pointerdown', close, true);
@@ -64,6 +132,7 @@ function StickyHeadingMenu({
   return (
     <div className="relative shrink-0" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         onPointerDown={(e) => {
           e.stopPropagation();
@@ -73,45 +142,53 @@ function StickyHeadingMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="inline-flex max-w-[7.5rem] items-center gap-0.5 rounded-lg border border-slate-400/70 bg-white/90 px-1.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm hover:bg-white"
+        className="inline-flex max-w-[10rem] items-center gap-0.5 rounded-lg border border-slate-400/70 bg-white/90 px-1.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm hover:bg-white"
         title="Unter Überschrift einordnen"
       >
         <Layers className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDown className={`h-3 w-3 shrink-0 opacity-70 ${open ? 'rotate-180' : ''}`} aria-hidden />
       </button>
-      {open && (
+      {open && menuPlacement === 'above' && (
         <div
           className="absolute bottom-full left-0 z-[80] mb-1 min-w-[11.5rem] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="flex w-full min-h-10 items-center px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-100"
-            onClick={() => {
-              onAssign(null);
+          <StickyHeadingMenuList
+            currentHeadingId={currentHeadingId}
+            headings={headings}
+            onPick={(id) => {
+              onAssign(id);
               setOpen(false);
             }}
-          >
-            Ohne Überschrift
-          </button>
-          {headings.map((h) => (
-            <button
-              key={h.id}
-              type="button"
-              className={`flex w-full min-h-10 items-center px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                h.id === currentHeadingId ? 'bg-blue-50 font-medium text-blue-900' : 'text-slate-800'
-              }`}
-              onClick={() => {
-                onAssign(h.id);
-                setOpen(false);
-              }}
-            >
-              {h.content}
-            </button>
-          ))}
+          />
         </div>
       )}
+      {open &&
+        menuPlacement === 'below' &&
+        portalRect &&
+        createPortal(
+          <div
+            ref={portalRef}
+            className="fixed z-[200] max-h-[min(50vh,20rem)] min-w-[11.5rem] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-2xl"
+            style={{
+              top: portalRect.top,
+              left: portalRect.left,
+              minWidth: portalRect.minW,
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <StickyHeadingMenuList
+              currentHeadingId={currentHeadingId}
+              headings={headings}
+              onPick={(id) => {
+                onAssign(id);
+                setOpen(false);
+              }}
+            />
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -272,19 +349,29 @@ export default function Brainstorming({
 
   const assignUnderHeading = async (stickyId: string, underHeadingId: string | null) => {
     if (!canModerate) return;
-    if (isTeacher) {
-      const { error } = await supabase
-        .from('stickies')
-        .update({ under_heading_id: underHeadingId })
-        .eq('id', stickyId);
-      if (error) console.error(error);
-      return;
+    const prev = stickies;
+    setStickies((list) =>
+      list.map((s) => (s.id === stickyId ? { ...s, underHeadingId } : s))
+    );
+    try {
+      if (isTeacher) {
+        const { error } = await supabase
+          .from('stickies')
+          .update({ under_heading_id: underHeadingId })
+          .eq('id', stickyId);
+        if (error) throw error;
+        return;
+      }
+      const { error } = await supabase.rpc('assign_sticky_heading', {
+        p_sticky_id: stickyId,
+        p_under_heading_id: underHeadingId,
+      });
+      if (error) throw error;
+    } catch (err) {
+      console.error(err);
+      setStickies(prev);
+      alert('Zuordnung zur Überschrift ist fehlgeschlagen. Bitte erneut versuchen.');
     }
-    const { error } = await supabase.rpc('assign_sticky_heading', {
-      p_sticky_id: stickyId,
-      p_under_heading_id: underHeadingId,
-    });
-    if (error) console.error(error);
   };
 
   const updateStickyPos = async (id: string, x: number, y: number) => {
@@ -340,8 +427,8 @@ export default function Brainstorming({
             <div>
               <h2 className="text-base font-bold tracking-tight text-slate-800 md:text-lg">Ideen · Tafelansicht</h2>
               <p className="mt-0.5 max-w-2xl text-xs text-slate-500 md:text-sm">
-                Zum Verschieben, Freigeben, Zuordnen und Löschen bitte den{' '}
-                <span className="font-semibold text-slate-600">Arbeitsmodus</span> nutzen.
+                Spalte pro Karte über „Überschrift“-Wahl. Zum freien Verschieben auf der Fläche und für Resize-Griffe
+                am Rand nutze den <span className="font-semibold text-slate-600">Arbeitsmodus</span>.
               </p>
             </div>
             {isTeacher && (
@@ -369,7 +456,17 @@ export default function Brainstorming({
                 </div>
                 <div className={`flex min-h-0 flex-1 flex-col ${BOARD_PRESENTATION.gridGap} overflow-y-auto p-4`}>
                   {orphan.map((sticky) => (
-                    <PresentationNoteCard key={sticky.id} sticky={sticky} showAuthorOnStickies={showAuthorOnStickies} />
+                    <PresentationNoteCard
+                      key={sticky.id}
+                      sticky={sticky}
+                      showAuthorOnStickies={showAuthorOnStickies}
+                      canModerate={canModerate}
+                      headings={sortedHeadings}
+                      onAssign={(hid) => void assignUnderHeading(sticky.id, hid)}
+                      isTeacher={isTeacher}
+                      onApprove={() => void approveSticky(sticky.id)}
+                      onDelete={() => void deleteSticky(sticky.id)}
+                    />
                   ))}
                   {orphan.length === 0 && (
                     <p className="py-6 text-center text-sm text-slate-400">Keine Ideen ohne Spalte.</p>
@@ -383,7 +480,14 @@ export default function Brainstorming({
                   className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-300/60 bg-white shadow-md"
                 >
                   <div className="shrink-0 border-b border-slate-200 bg-slate-200/90 px-4 py-3">
-                    <h3 className="text-base font-bold leading-snug text-slate-900 md:text-lg">{h.content}</h3>
+                    <h3
+                      className="font-bold leading-snug text-slate-900"
+                      style={{
+                        fontSize: `clamp(0.95rem, ${(1.05 * h.displayScale).toFixed(3)}rem, 2.35rem)`,
+                      }}
+                    >
+                      {h.content}
+                    </h3>
                   </div>
                   <div className={`flex min-h-0 flex-1 flex-col ${BOARD_PRESENTATION.gridGap} overflow-y-auto p-4`}>
                     {notes
@@ -393,6 +497,12 @@ export default function Brainstorming({
                           key={sticky.id}
                           sticky={sticky}
                           showAuthorOnStickies={showAuthorOnStickies}
+                          canModerate={canModerate}
+                          headings={sortedHeadings}
+                          onAssign={(hid) => void assignUnderHeading(sticky.id, hid)}
+                          isTeacher={isTeacher}
+                          onApprove={() => void approveSticky(sticky.id)}
+                          onDelete={() => void deleteSticky(sticky.id)}
                         />
                       ))}
                     {notes.filter((n) => n.underHeadingId === h.id).length === 0 && (
@@ -405,7 +515,17 @@ export default function Brainstorming({
           ) : (
             <div className="mx-auto grid w-full max-w-[1680px] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:gap-6 xl:grid-cols-4 2xl:grid-cols-5">
               {notes.map((sticky) => (
-                <PresentationNoteCard key={sticky.id} sticky={sticky} showAuthorOnStickies={showAuthorOnStickies} />
+                <PresentationNoteCard
+                  key={sticky.id}
+                  sticky={sticky}
+                  showAuthorOnStickies={showAuthorOnStickies}
+                  canModerate={canModerate}
+                  headings={sortedHeadings}
+                  onAssign={(hid) => void assignUnderHeading(sticky.id, hid)}
+                  isTeacher={isTeacher}
+                  onApprove={() => void approveSticky(sticky.id)}
+                  onDelete={() => void deleteSticky(sticky.id)}
+                />
               ))}
               {notes.length === 0 && (
                 <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white/60 py-16 text-center text-slate-500">
@@ -745,11 +865,12 @@ function DraggableBoardSticky({
             )}
           </div>
           <div className="justify-self-end shrink-0 flex items-center justify-center min-w-9 min-h-9">
-            {sticky.stickyType === 'note' && canResize && (
+            {canResize && (
               <StickyResizeHandle
                 displayScale={displayScale}
                 onPreview={onResizePreview}
                 onCommit={onResizeCommit}
+                ariaLabel={isHeading ? 'Größe der Überschrift' : 'Größe der Ideenkarte'}
               />
             )}
           </div>
@@ -763,10 +884,12 @@ function StickyResizeHandle({
   displayScale,
   onPreview,
   onCommit,
+  ariaLabel = 'Größe der Karte',
 }: {
   displayScale: number;
   onPreview: (s: number | null) => void;
   onCommit: (s: number) => void;
+  ariaLabel?: string;
 }) {
   const ref = useRef({
     active: false,
@@ -817,7 +940,7 @@ function StickyResizeHandle({
   return (
     <div
       role="slider"
-      aria-label="Größe der Ideenkarte"
+      aria-label={ariaLabel}
       aria-valuemin={0.5}
       aria-valuemax={4}
       aria-valuenow={displayScale}
@@ -834,15 +957,32 @@ function StickyResizeHandle({
   );
 }
 
-/** Nur Tafelmodus: kompakte Lesekarte ohne Bearbeitungs-UI (kein display_scale-Transform). */
+/** Tafelmodus: Lesekarte, optional Zuordnung/Freigabe/Löschen für Lehrkraft & Moderation. */
 function PresentationNoteCard({
   sticky,
   showAuthorOnStickies,
+  canModerate = false,
+  headings = [],
+  onAssign,
+  isTeacher = false,
+  onApprove,
+  onDelete,
 }: {
   sticky: StickyNote;
   showAuthorOnStickies: boolean;
+  canModerate?: boolean;
+  headings?: StickyNote[];
+  onAssign?: (headingId: string | null) => void;
+  isTeacher?: boolean;
+  onApprove?: () => void;
+  onDelete?: () => void;
 }) {
   const pending = sticky.status === 'pending';
+  const showToolbar =
+    Boolean(canModerate && onAssign) ||
+    Boolean(isTeacher && onDelete) ||
+    Boolean(isTeacher && pending && onApprove);
+
   return (
     <article
       className={`flex w-full min-w-0 flex-col rounded-xl border border-slate-300/70 shadow-md ${BOARD_PRESENTATION.cardMinH} ${BOARD_PRESENTATION.cardPad} ${
@@ -855,13 +995,61 @@ function PresentationNoteCard({
           Ausstehend
         </span>
       )}
-      <p className={`text-slate-900 ${BOARD_PRESENTATION.noteText} font-semibold break-words [text-wrap:pretty]`}>
+      <p
+        className={`text-slate-900 ${BOARD_PRESENTATION.noteText} font-semibold break-words [text-wrap:pretty]`}
+        style={{
+          fontSize: `clamp(0.95rem, ${(1.0625 * sticky.displayScale).toFixed(3)}rem, 2.1rem)`,
+        }}
+      >
         {sticky.content}
       </p>
       {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
         <p className="mt-3 border-t border-black/10 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-600/90">
           {sticky.authorName}
         </p>
+      )}
+      {showToolbar && (
+        <div
+          className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/15 pt-3"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {canModerate && onAssign && (
+            <StickyHeadingMenu
+              currentHeadingId={sticky.underHeadingId}
+              headings={headings}
+              onAssign={onAssign}
+              menuPlacement="below"
+            />
+          )}
+          {isTeacher && pending && onApprove && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onApprove();
+              }}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600/15 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-600/25"
+              title="Freigeben"
+            >
+              <Check className="h-4 w-4" />
+              Freigeben
+            </button>
+          )}
+          {isTeacher && onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="inline-flex items-center gap-1 rounded-lg bg-rose-600/15 px-2 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-600/25"
+              title="Karte löschen"
+            >
+              <Trash2 className="h-4 w-4" />
+              Löschen
+            </button>
+          )}
+        </div>
       )}
     </article>
   );
