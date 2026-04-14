@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import {
   BarChart3,
   ChevronLeft,
+  Clock,
   Cloud,
   Download,
   FileText,
@@ -17,6 +18,8 @@ import {
   Maximize2,
   Minimize2,
   PanelLeft,
+  Pause,
+  Play,
   Presentation,
   Settings,
   Share2,
@@ -38,6 +41,7 @@ import WordCloud from '../components/WordCloud';
 import LivePoll from '../components/LivePoll';
 import PeerFeedback from '../components/PeerFeedback';
 import SessionToolShell from '../components/session/SessionToolShell';
+import BoardTimerModal from '../components/session/BoardTimerModal';
 import type { SessionTabId } from '../lib/sessionToolMeta';
 import { SESSION_TAB_ORDER, SESSION_TOOL_META } from '../lib/sessionToolMeta';
 import {
@@ -114,6 +118,7 @@ export default function SessionView() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   /** Option B: klassische linke Icon-Leiste (Standard: ausgeblendet) */
   const [legacyToolRailOpen, setLegacyToolRailOpen] = useState(readLegacyToolRailPreference);
+  const [boardTimerOpen, setBoardTimerOpen] = useState(false);
 
   const navigate = useNavigate();
   const mainRef = useRef<HTMLDivElement>(null);
@@ -196,6 +201,10 @@ export default function SessionView() {
     if (tabs.length === 0) return;
     if (!tabs.includes(activeTab)) setActiveTab(tabs[0]);
   }, [session, effectiveIsTeacher, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'board') setBoardTimerOpen(false);
+  }, [activeTab]);
 
   if (!session) return null;
 
@@ -510,6 +519,43 @@ export default function SessionView() {
                   role={sessionRole}
                   presentationMode={session.presentationMode}
                   variant="canvas"
+                  actions={
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {isTeacher && !previewAsStudent && session.status !== 'archived' && (
+                        <button
+                          type="button"
+                          onClick={() => void toggleSessionLock()}
+                          className="inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                          title={
+                            session.status === 'active'
+                              ? 'Sitzung pausieren (SuS können vorübergehend nicht bearbeiten)'
+                              : 'Sitzung wieder öffnen'
+                          }
+                        >
+                          {session.status === 'active' ? (
+                            <>
+                              <Pause className="h-4 w-4 shrink-0" aria-hidden />
+                              <span>Pause</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-4 w-4 shrink-0" aria-hidden />
+                              <span>Weiter</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setBoardTimerOpen(true)}
+                        className="inline-flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                        title="Timer und Stoppuhr"
+                      >
+                        <Clock className="h-4 w-4 shrink-0" aria-hidden />
+                        <span>Timer</span>
+                      </button>
+                    </div>
+                  }
                 >
                   <div className="flex-1 min-h-0 min-w-0 bg-white">
                     <Board
@@ -734,6 +780,8 @@ export default function SessionView() {
           </div>
         </Modal>
       )}
+
+      <BoardTimerModal open={boardTimerOpen} onClose={() => setBoardTimerOpen(false)} />
 
       {showSettings && isTeacher && (
         <Modal onClose={() => setShowSettings(false)} title="Sitzungseinstellungen">

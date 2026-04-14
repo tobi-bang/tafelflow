@@ -18,6 +18,17 @@
   @apply touch-none select-none;
 }
 
+/** Countdown: letzte Sekunden / Ende (Gemeinsame Tafel – Timer-Modal) */
+@keyframes board-timer-urgent-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.32;
+  }
+}
+
 @layer utilities {
   .scrollbar-none {
     scrollbar-width: none;
@@ -25,5 +36,14 @@
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
+  }
+
+  .board-timer-urgent {
+    animation: board-timer-urgent-blink 0.65s ease-in-out infinite;
+    color: rgb(220 38 38);
+  }
+  .board-timer-finished {
+    animation: board-timer-urgent-blink 0.45s ease-in-out infinite;
+    color: rgb(185 28 28);
   }
 }
