@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToBoardObject } from '../lib/dbMap';
 import type { BoardModule, BoardObject, BoardRole, SessionPermissions } from '../types';
-import { Trash2, Pencil } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import type { SessionTabId } from '../lib/sessionToolMeta';
 import { moduleRegistry, moduleRegistryList } from '../lib/moduleRegistry';
 import { createBoardModule } from '../lib/boardModules';
@@ -12,7 +12,6 @@ import {
   canStudentEditModuleContent,
   canTeacherManageModule,
   getObjectPageId,
-  getSyncedActivePageId,
   readBoardModuleFromObject,
 } from '../lib/boardState';
 
@@ -45,6 +44,8 @@ export default function Board({
   const pathDraftRef = useRef<{ x: number; y: number }[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const pageStripRef = useRef<HTMLDivElement>(null);
+  const activePageTabRef = useRef<HTMLButtonElement>(null);
   const persistTimerRef = useRef<Record<string, number>>({});
 
   const canDraw = isTeacher || permissions.drawBoard;
@@ -54,8 +55,6 @@ export default function Board({
   const pages = snapshot.pages;
   const modules = snapshot.modules;
   const paths = snapshot.paths;
-  const syncedActivePageId = useMemo(() => getSyncedActivePageId(objects), [objects]);
-
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase
@@ -118,10 +117,12 @@ export default function Board({
   }, [pages, activePageId]);
 
   useEffect(() => {
-    if (!syncedActivePageId) return;
-    if (syncedActivePageId === activePageId) return;
-    setActivePageId(syncedActivePageId);
-  }, [syncedActivePageId, activePageId]);
+    activePageTabRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, [activePageId, pages]);
 
   useEffect(() => {
     if (pages.length > 0) return;
@@ -399,7 +400,7 @@ export default function Board({
   return (
     <div ref={boardRef} className="relative w-full h-full flex flex-col bg-white">
       <div
-        className={`absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center z-10 ${
+        className={`pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center ${
           presentationMode ? 'p-4 gap-3' : 'p-2 gap-2'
         }`}
       >
@@ -453,43 +454,91 @@ export default function Board({
         )}
       </div>
 
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] bg-white/95 border border-slate-200 rounded-2xl shadow px-3 py-2 flex items-center gap-2 overflow-x-auto">
-        {pages.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => {
-              setActivePageId(p.id);
-              if (canManageModules) void publishActivePage(p.id);
-            }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap ${
-              p.id === activePageId ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            {p.title}
-          </button>
-        ))}
+      <div className="pointer-events-auto absolute top-20 left-1/2 z-30 flex max-w-[96vw] -translate-x-1/2 items-center gap-1 rounded-2xl border border-slate-200 bg-white/95 py-2 pl-2 pr-3 shadow-md">
+        <button
+          type="button"
+          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
+          aria-label="Seitenleiste nach links scrollen"
+          onClick={() => pageStripRef.current?.scrollBy({ left: -220, behavior: 'smooth' })}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div
+          ref={pageStripRef}
+          role="tablist"
+          aria-label="Tafelseiten"
+          className="flex max-w-[min(72vw,42rem)] items-center gap-1 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:thin]"
+        >
+          {pages.map((p) => {
+            const isActive = p.id === activePageId;
+            return (
+              <button
+                key={p.id}
+                ref={isActive ? activePageTabRef : undefined}
+                type="button"
+                role="tab"
+                aria-selected={isActive ? 'true' : 'false'}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => {
+                  setActivePageId(p.id);
+                  if (canManageModules) void publishActivePage(p.id);
+                }}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-md ring-2 ring-blue-400/60'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {p.title}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
+          aria-label="Seitenleiste nach rechts scrollen"
+          onClick={() => pageStripRef.current?.scrollBy({ left: 220, behavior: 'smooth' })}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
         {canManageModules && (
-          <>
-            <button type="button" onClick={() => void createPage(`Seite ${pages.length + 1}`)} className="px-2 py-1.5 rounded-lg text-xs bg-emerald-100 text-emerald-800 font-semibold">
+          <div className="ml-1 flex shrink-0 flex-wrap items-center gap-1 border-l border-slate-200 pl-2">
+            <button
+              type="button"
+              onClick={() => void createPage(`Seite ${pages.length + 1}`)}
+              className="rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200"
+            >
               + Seite
             </button>
-            <button type="button" onClick={() => void renamePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-slate-100 text-slate-700 font-semibold">
+            <button
+              type="button"
+              onClick={() => void renamePage(activePageId)}
+              className="rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+            >
               Umbenennen
             </button>
-            <button type="button" onClick={() => void duplicatePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-amber-100 text-amber-800 font-semibold">
+            <button
+              type="button"
+              onClick={() => void duplicatePage(activePageId)}
+              className="rounded-lg bg-amber-100 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200"
+            >
               Duplizieren
             </button>
-            <button type="button" onClick={() => void deletePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-rose-100 text-rose-700 font-semibold">
+            <button
+              type="button"
+              onClick={() => void deletePage(activePageId)}
+              className="rounded-lg bg-rose-100 px-2 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-200"
+            >
               Löschen
             </button>
-          </>
+          </div>
         )}
       </div>
 
       <svg
         ref={svgRef}
-        className="w-full h-full touch-none cursor-crosshair absolute inset-0"
+        className="pointer-events-auto absolute inset-0 z-0 h-full w-full cursor-crosshair touch-none"
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={endDrawing}
@@ -517,7 +566,7 @@ export default function Board({
         )}
       </svg>
 
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="pointer-events-none absolute inset-0 z-10">
         {modules.map((module) => (
           <Fragment key={module.id}>
           <ModuleWrapper
