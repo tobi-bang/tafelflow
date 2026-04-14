@@ -35,11 +35,40 @@ export interface Session {
 
 export interface BoardObject {
   id: string;
-  type: 'path' | 'text' | 'shape';
+  type: 'path' | 'text' | 'shape' | 'module' | 'board_page' | 'board_meta';
   data: unknown;
   color: string;
   authorId: string;
   createdAt: string;
+}
+
+export interface BoardModule {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  locked?: boolean;
+  data: BoardModuleData;
+}
+
+export interface BoardPage {
+  id: string;
+  title: string;
+  order: number;
+}
+
+export type BoardRole = 'teacher' | 'student';
+
+export interface BoardModuleData {
+  pageId?: string;
+  zIndex?: number;
+  title?: string;
+  text?: string;
+  /** Lehrkraft-Freigabe: SuS dürfen Inhalt bearbeiten (bei freigegebenen Modulen). */
+  editableByStudents?: boolean;
+  [key: string]: unknown;
 }
 
 export type StickyKind = 'note' | 'heading';

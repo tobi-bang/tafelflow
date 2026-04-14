@@ -1,14 +1,29 @@
-import React, { useState, useEffect, useRef, Fragment } from 'react';
+import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToBoardObject } from '../lib/dbMap';
-import type { BoardObject, SessionPermissions } from '../types';
+import type { BoardModule, BoardObject, BoardRole, SessionPermissions } from '../types';
 import { Trash2, Pencil } from 'lucide-react';
+import type { SessionTabId } from '../lib/sessionToolMeta';
+import { moduleRegistry, moduleRegistryList } from '../lib/moduleRegistry';
+import { createBoardModule } from '../lib/boardModules';
+import ModuleWrapper from './board/ModuleWrapper';
+import {
+  buildBoardState,
+  canStudentEditModuleContent,
+  canTeacherManageModule,
+  getObjectPageId,
+  getSyncedActivePageId,
+  readBoardModuleFromObject,
+} from '../lib/boardState';
 
 interface BoardProps {
   sessionId: string;
   isTeacher: boolean;
   permissions: SessionPermissions;
   presentationMode?: boolean;
+  onOpenTool?: (tab: SessionTabId) => void;
+  selectModuleId?: string | null;
+  onHandledSelectModuleId?: () => void;
 }
 
 export default function Board({
@@ -16,16 +31,30 @@ export default function Board({
   isTeacher,
   permissions,
   presentationMode = false,
+  onOpenTool,
+  selectModuleId = null,
+  onHandledSelectModuleId,
 }: BoardProps) {
   const [objects, setObjects] = useState<BoardObject[]>([]);
   const [tool, setTool] = useState<'pencil' | 'eraser'>('pencil');
   const [color, setColor] = useState('#2563eb');
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [activePageId, setActivePageId] = useState<string>('default');
   const pathDraftRef = useRef<{ x: number; y: number }[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const persistTimerRef = useRef<Record<string, number>>({});
 
   const canDraw = isTeacher || permissions.drawBoard;
+  const boardRole: BoardRole = isTeacher ? 'teacher' : 'student';
+  const canManageModules = canTeacherManageModule(boardRole);
+  const snapshot = useMemo(() => buildBoardState(objects, activePageId), [objects, activePageId]);
+  const pages = snapshot.pages;
+  const modules = snapshot.modules;
+  const paths = snapshot.paths;
+  const syncedActivePageId = useMemo(() => getSyncedActivePageId(objects), [objects]);
 
   useEffect(() => {
     const load = async () => {
@@ -40,29 +69,94 @@ export default function Board({
 
     const channel = supabase
       .channel(`board-${sessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'board_objects',
-          filter: `session_id=eq.${sessionId}`,
-        },
-        async () => {
-          const { data } = await supabase
-            .from('board_objects')
-            .select('*')
-            .eq('session_id', sessionId)
-            .order('created_at', { ascending: true });
-          if (data) setObjects(data.map((r) => rowToBoardObject(r as Record<string, unknown>)));
-        }
-      )
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'board_objects',
+        filter: `session_id=eq.${sessionId}`,
+      }, (payload) => {
+        const next = rowToBoardObject(payload.new as Record<string, unknown>);
+        setObjects((prev) => {
+          const existing = prev.find((o) => o.id === next.id);
+          if (existing) return prev.map((o) => (o.id === next.id ? next : o));
+          return [...prev, next];
+        });
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'board_objects',
+        filter: `session_id=eq.${sessionId}`,
+      }, (payload) => {
+        const next = rowToBoardObject(payload.new as Record<string, unknown>);
+        setObjects((prev) => {
+          if (!prev.some((o) => o.id === next.id)) return [...prev, next];
+          return prev.map((o) => (o.id === next.id ? next : o));
+        });
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'board_objects',
+        filter: `session_id=eq.${sessionId}`,
+      }, (payload) => {
+        const oldRow = payload.old as Record<string, unknown>;
+        const oldId = String(oldRow?.id ?? '');
+        if (!oldId) return;
+        setObjects((prev) => prev.filter((o) => o.id !== oldId));
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (pages.some((p) => p.id === activePageId)) return;
+    setActivePageId(pages[0]?.id ?? 'default');
+  }, [pages, activePageId]);
+
+  useEffect(() => {
+    if (!syncedActivePageId) return;
+    if (syncedActivePageId === activePageId) return;
+    setActivePageId(syncedActivePageId);
+  }, [syncedActivePageId, activePageId]);
+
+  useEffect(() => {
+    if (pages.length > 0) return;
+    if (!canManageModules) return;
+    void createPage('Seite 1');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManageModules, sessionId]);
+
+  const publishActivePage = async (pageId: string) => {
+    if (!canManageModules) return;
+    const existingMeta = objects.find((o) => {
+      if (o.type !== 'board_meta') return false;
+      const data = o.data as Record<string, unknown>;
+      return data?.kind === 'board_session';
+    });
+    if (existingMeta) {
+      const current = existingMeta.data as Record<string, unknown>;
+      const nextData = { ...current, kind: 'board_session', activePageId: pageId };
+      const { error } = await supabase.from('board_objects').update({ data: nextData }).eq('id', existingMeta.id);
+      if (error) console.error(error);
+      return;
+    }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('board_objects').insert({
+      session_id: sessionId,
+      type: 'board_meta',
+      data: { kind: 'board_session', activePageId: pageId },
+      color: '#64748b',
+      author_id: user.id,
+    });
+    if (error) console.error(error);
+  };
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
@@ -104,7 +198,7 @@ export default function Board({
       const { error } = await supabase.from('board_objects').insert({
         session_id: sessionId,
         type: 'path',
-        data: pts,
+        data: { points: pts, pageId: activePageId },
         color,
         author_id: user.id,
       });
@@ -119,14 +213,191 @@ export default function Board({
   const clearBoard = async () => {
     if (!isTeacher) return;
     if (!confirm('Ganze Tafel löschen?')) return;
-    const ids = objects.map((o) => o.id);
+    const ids = objects
+      .filter((o) => {
+        if (o.type === 'board_page' || o.type === 'board_meta') return false;
+        return getObjectPageId(o) === activePageId;
+      })
+      .map((o) => o.id);
     for (const id of ids) {
       await supabase.from('board_objects').delete().eq('id', id);
     }
   };
 
+  const saveModule = async (id: string, patch: Partial<BoardModule>) => {
+    const current = modules.find((m) => m.id === id);
+    if (!current) return;
+    const canStudentEditContent = canStudentEditModuleContent(boardRole, current);
+    const patchTouchesLayout =
+      patch.x !== undefined ||
+      patch.y !== undefined ||
+      patch.width !== undefined ||
+      patch.height !== undefined ||
+      patch.locked !== undefined;
+    if (!canManageModules && (patchTouchesLayout || !canStudentEditContent)) return;
+    const next: BoardModule = {
+      ...current,
+      ...patch,
+      data: { ...current.data, ...(patch.data ?? {}) },
+    };
+    setObjects((list) =>
+      list.map((o) => (o.id === id ? { ...o, data: next as unknown as BoardObject['data'] } : o))
+    );
+    if (persistTimerRef.current[id]) window.clearTimeout(persistTimerRef.current[id]);
+    persistTimerRef.current[id] = window.setTimeout(async () => {
+      const { error } = await supabase.from('board_objects').update({ data: next }).eq('id', id);
+      if (error) console.error(error);
+    }, 140);
+  };
+
+  const createModule = async (type: string) => {
+    if (!canManageModules) return;
+    try {
+      const id = await createBoardModule(sessionId, type, activePageId);
+      setSelectedModuleId(id);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Modul konnte nicht erstellt werden.');
+    }
+  };
+
+  const bringToFront = (id: string) => {
+    const top = modules.reduce((max, m) => Math.max(max, m.data.zIndex ?? 1), 1) + 1;
+    void saveModule(id, { data: { zIndex: top } });
+  };
+
+  const deleteModule = async (id: string) => {
+    if (!canManageModules) return;
+    setObjects((list) => list.filter((o) => o.id !== id));
+    const { error } = await supabase.from('board_objects').delete().eq('id', id);
+    if (error) console.error(error);
+    if (selectedModuleId === id) setSelectedModuleId(null);
+  };
+
+  useEffect(() => {
+    if (!selectModuleId) return;
+    const exists = modules.some((m) => m.id === selectModuleId);
+    if (!exists) return;
+    setSelectedModuleId(selectModuleId);
+    bringToFront(selectModuleId);
+    onHandledSelectModuleId?.();
+  }, [selectModuleId, modules, onHandledSelectModuleId]);
+
+  const createPage = async (title: string) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const newId = crypto.randomUUID();
+    const order = pages.reduce((max, p) => Math.max(max, p.order), 0) + 1;
+    const { error } = await supabase.from('board_objects').insert({
+      session_id: sessionId,
+      type: 'board_page',
+      data: { id: newId, title, order },
+      color: '#0f172a',
+      author_id: user.id,
+    });
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setActivePageId(newId);
+    await publishActivePage(newId);
+  };
+
+  const renamePage = async (pageId: string) => {
+    const page = pages.find((p) => p.id === pageId);
+    if (!page) return;
+    const nextTitle = prompt('Seitentitel', page.title)?.trim();
+    if (!nextTitle) return;
+    const target = objects.find((o) => o.type === 'board_page' && String((o.data as Record<string, unknown>).id ?? '') === pageId);
+    if (!target) return;
+    const { error } = await supabase
+      .from('board_objects')
+      .update({ data: { ...(target.data as Record<string, unknown>), title: nextTitle } })
+      .eq('id', target.id);
+    if (error) console.error(error);
+  };
+
+  const duplicatePage = async (pageId: string) => {
+    const page = pages.find((p) => p.id === pageId);
+    if (!page) return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const newPageId = crypto.randomUUID();
+    const newTitle = `${page.title} (Kopie)`;
+    const order = pages.reduce((max, p) => Math.max(max, p.order), 0) + 1;
+    const pageInsert = await supabase.from('board_objects').insert({
+      session_id: sessionId,
+      type: 'board_page',
+      data: { id: newPageId, title: newTitle, order },
+      color: '#0f172a',
+      author_id: user.id,
+    });
+    if (pageInsert.error) {
+      console.error(pageInsert.error);
+      return;
+    }
+    const sourceObjects = objects.filter((o) => getObjectPageId(o) === pageId && o.type !== 'board_page');
+    const rows = sourceObjects.map((o) => {
+      if (o.type === 'module') {
+        const m = readBoardModuleFromObject(o);
+        return {
+          session_id: sessionId,
+          type: 'module',
+          color: o.color,
+          author_id: user.id,
+          data: {
+            ...(m as BoardModule),
+            id: '',
+            x: (m?.x ?? 80) + 20,
+            y: (m?.y ?? 80) + 20,
+            data: { ...(m?.data ?? {}), pageId: newPageId, zIndex: Number((m?.data?.zIndex as number | undefined) ?? 1) + 1 },
+          },
+        };
+      }
+      const d = o.data as Record<string, unknown>;
+      const points = Array.isArray(d) ? d : ((d.points as unknown[]) ?? []);
+      return {
+        session_id: sessionId,
+        type: 'path',
+        color: o.color,
+        author_id: user.id,
+        data: { points, pageId: newPageId },
+      };
+    });
+    if (rows.length > 0) {
+      const insertRes = await supabase.from('board_objects').insert(rows);
+      if (insertRes.error) console.error(insertRes.error);
+    }
+    setActivePageId(newPageId);
+    await publishActivePage(newPageId);
+  };
+
+  const deletePage = async (pageId: string) => {
+    if (pages.length <= 1) {
+      alert('Mindestens eine Seite muss bestehen bleiben.');
+      return;
+    }
+    if (!confirm('Seite mit allen Modulen/Zeichnungen löschen?')) return;
+    const ids = objects
+      .filter((o) => getObjectPageId(o) === pageId || (o.type === 'board_page' && String((o.data as Record<string, unknown>).id ?? '') === pageId))
+      .map((o) => o.id);
+    if (ids.length > 0) {
+      const { error } = await supabase.from('board_objects').delete().in('id', ids);
+      if (error) console.error(error);
+    }
+    const fallback = pages.find((p) => p.id !== pageId);
+    if (fallback) {
+      setActivePageId(fallback.id);
+      await publishActivePage(fallback.id);
+    }
+  };
+
   return (
-    <div className="relative w-full h-full flex flex-col">
+    <div ref={boardRef} className="relative w-full h-full flex flex-col bg-white">
       <div
         className={`absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center z-10 ${
           presentationMode ? 'p-4 gap-3' : 'p-2 gap-2'
@@ -156,8 +427,61 @@ export default function Board({
               type="button"
               onClick={clearBoard}
               className={`hover:bg-rose-50 text-rose-600 rounded-xl transition-colors ${presentationMode ? 'p-3' : 'p-2'}`}
+              title="Tafelinhalt löschen"
+              aria-label="Tafelinhalt löschen"
             >
               <Trash2 className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />
+            </button>
+          </>
+        )}
+        {canManageModules && (
+          <>
+            <div className="w-px h-6 bg-slate-200 mx-1" />
+            {moduleRegistryList.map((definition) => (
+              <button
+                key={definition.type}
+                type="button"
+                onClick={() => void createModule(definition.type)}
+                className="px-2 py-1.5 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold"
+                title={`${definition.title} hinzufügen`}
+                aria-label={`${definition.title} hinzufügen`}
+              >
+                {definition.addLabel}
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 max-w-[95vw] bg-white/95 border border-slate-200 rounded-2xl shadow px-3 py-2 flex items-center gap-2 overflow-x-auto">
+        {pages.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => {
+              setActivePageId(p.id);
+              if (canManageModules) void publishActivePage(p.id);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap ${
+              p.id === activePageId ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {p.title}
+          </button>
+        ))}
+        {canManageModules && (
+          <>
+            <button type="button" onClick={() => void createPage(`Seite ${pages.length + 1}`)} className="px-2 py-1.5 rounded-lg text-xs bg-emerald-100 text-emerald-800 font-semibold">
+              + Seite
+            </button>
+            <button type="button" onClick={() => void renamePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-slate-100 text-slate-700 font-semibold">
+              Umbenennen
+            </button>
+            <button type="button" onClick={() => void duplicatePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-amber-100 text-amber-800 font-semibold">
+              Duplizieren
+            </button>
+            <button type="button" onClick={() => void deletePage(activePageId)} className="px-2 py-1.5 rounded-lg text-xs bg-rose-100 text-rose-700 font-semibold">
+              Löschen
             </button>
           </>
         )}
@@ -165,7 +489,7 @@ export default function Board({
 
       <svg
         ref={svgRef}
-        className="w-full h-full touch-none cursor-crosshair"
+        className="w-full h-full touch-none cursor-crosshair absolute inset-0"
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={endDrawing}
@@ -174,10 +498,10 @@ export default function Board({
         onTouchMove={draw}
         onTouchEnd={endDrawing}
       >
-        {objects.map((obj) => (
+        {paths.map((obj) => (
           <Fragment key={obj.id}>
             <BoardPath
-              points={obj.data as { x: number; y: number }[]}
+              points={obj.points}
               color={obj.color}
               strokeWidth={presentationMode ? 6 : 3}
             />
@@ -193,6 +517,57 @@ export default function Board({
         )}
       </svg>
 
+      <div className="absolute inset-0 pointer-events-none">
+        {modules.map((module) => (
+          <Fragment key={module.id}>
+          <ModuleWrapper
+            module={module}
+            selected={selectedModuleId === module.id}
+            draggable={canManageModules}
+            deletable={canManageModules}
+            lockable={canManageModules}
+            releasable={canManageModules}
+            released={module.data.editableByStudents === true}
+            resizable={canManageModules}
+            onSelect={(id) => {
+              setSelectedModuleId(id);
+              bringToFront(id);
+            }}
+            onMove={(id, next) => {
+              void saveModule(id, next);
+            }}
+            onResize={(id, next) => {
+              void saveModule(id, next);
+            }}
+            onToggleLock={(id) => {
+              const current = modules.find((m) => m.id === id);
+              if (!current) return;
+              void saveModule(id, { locked: !current.locked });
+            }}
+            onToggleRelease={(id) => {
+              const current = modules.find((m) => m.id === id);
+              if (!current) return;
+              const nextReleased = !(current.data.editableByStudents === true);
+              void saveModule(id, {
+                data: { editableByStudents: nextReleased },
+              });
+            }}
+            onDelete={(id) => {
+              void deleteModule(id);
+            }}
+          >
+            {renderModuleContent(
+              module,
+              onOpenTool,
+              (patch) => void saveModule(module.id, patch),
+              canManageModules ||
+                canStudentEditModuleContent(boardRole, module)
+            )}
+          </ModuleWrapper>
+          </Fragment>
+        ))}
+      </div>
+
       {!canDraw && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-rose-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg">
           Zeichnen deaktiviert
@@ -200,6 +575,34 @@ export default function Board({
       )}
     </div>
   );
+}
+
+function renderModuleContent(
+  module: BoardModule,
+  onOpenTool: ((tab: SessionTabId) => void) | undefined,
+  onPatch: (patch: Partial<BoardModule>) => void,
+  editable: boolean
+) {
+  const definition = moduleRegistry[module.type];
+  if (!definition) {
+    return (
+      <div className="h-full rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        Unbekannter Modultyp <code>{module.type}</code>. Bitte in `moduleRegistry.tsx` registrieren.
+      </div>
+    );
+  }
+  if (module.type === 'text') {
+    return (
+      <textarea
+        value={String(module.data.text ?? '')}
+        onChange={(e) => onPatch({ data: { text: e.target.value } })}
+        placeholder="Notizen für die gemeinsame Tafel ..."
+        className="w-full h-full resize-none outline-none bg-transparent text-sm text-slate-700 leading-relaxed"
+        readOnly={!editable}
+      />
+    );
+  }
+  return <>{definition.render({ module, onOpenTool })}</>;
 }
 
 function BoardPath({
@@ -257,6 +660,8 @@ function ColorButton({ color, active, onClick }: { color: string; active: boolea
       onClick={onClick}
       className={`w-8 h-8 rounded-full border-2 transition-all ${active ? 'border-slate-900 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`}
       style={{ backgroundColor: color }}
+      title={`Farbe ${color}`}
+      aria-label={`Farbe ${color}`}
     />
   );
 }

@@ -53,6 +53,7 @@ import {
   fetchSessionExportData,
   safeExportBasename,
 } from '../lib/sessionExport';
+import { createBoardModule, tabToModuleType } from '../lib/boardModules';
 
 type Tab = SessionTabId;
 
@@ -108,6 +109,7 @@ export default function SessionView() {
   const [showShare, setShowShare] = useState(false);
   const [showToolPicker, setShowToolPicker] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [boardSelectModuleId, setBoardSelectModuleId] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<'pdf' | 'txt' | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -198,7 +200,9 @@ export default function SessionView() {
 
   if (!session) return null;
 
-  const joinUrl = `${window.location.origin}/student/${session.room_code}`;
+  const joinUrl = `${window.location.origin}/join?session=${encodeURIComponent(
+    session.id
+  )}&room=${encodeURIComponent(session.room_code)}&role=student`;
 
   type BooleanSessionPermission = Exclude<keyof Session['permissions'], 'ideasDefaultScale'>;
 
@@ -514,6 +518,9 @@ export default function SessionView() {
                       isTeacher={effectiveIsTeacher}
                       permissions={session.permissions}
                       presentationMode={session.presentationMode}
+                      onOpenTool={(tab) => setActiveTab(tab)}
+                      selectModuleId={boardSelectModuleId}
+                      onHandledSelectModuleId={() => setBoardSelectModuleId(null)}
                     />
                   </div>
                 </SessionToolShell>
@@ -623,8 +630,20 @@ export default function SessionView() {
               <button
                 key={tab}
                 type="button"
-                onClick={() => {
-                  setActiveTab(tab);
+                onClick={async () => {
+                  const moduleType = tabToModuleType(tab);
+                  if (effectiveIsTeacher && moduleType && session) {
+                    try {
+                      const id = await createBoardModule(session.id, moduleType);
+                      setBoardSelectModuleId(id);
+                      setActiveTab('board');
+                    } catch (err) {
+                      console.error(err);
+                      alert(err instanceof Error ? err.message : 'Tool-Modul konnte nicht erstellt werden.');
+                    }
+                  } else {
+                    setActiveTab(tab);
+                  }
                   setShowToolPicker(false);
                 }}
                 className={`flex gap-3 p-4 rounded-2xl border text-left transition-all min-h-[72px] ${

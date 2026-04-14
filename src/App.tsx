@@ -113,6 +113,7 @@ export default function App() {
           />
           <Route path="/session/:sessionId" element={<SessionView />} />
           <Route path="/join" element={<StudentJoin />} />
+          <Route path="/join/session/:sessionId" element={<StudentJoin />} />
           <Route path="/student/:roomCode" element={<StudentJoin />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

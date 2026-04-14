@@ -3,10 +3,17 @@ build/
 dist/
 coverage/
 .DS_Store
+Thumbs.db
 *.log
+.vercel/
 
 # Secrets & lokale Umgebung (nie committen)
 .env
 .env.local
 .env*
 !.env.example
+
+# Editor / IDE
+.idea/
+*.swp
+*.swo

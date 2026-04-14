@@ -6,12 +6,13 @@ const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
 /**
- * Echter Supabase-Client – nur mit gültigen ENV-Variablen.
- * Keine Platzhalter-URL im Produktionsbetrieb: Ohne Keys rendert die App eine Konfigurationsseite (siehe App.tsx).
+ * Echter Supabase-Client.
+ * Ohne ENV rendert `App` zuerst `SupabaseConfigMissing` – die unten stehenden Platzhalter
+ * verhindern nur einen Absturz beim Import; sie sind keine echten Endpoints und keine Keys.
  */
 export const supabase: SupabaseClient = createClient(
-  url || 'https://invalid.local.tafelflow',
-  anonKey || 'invalid-anon-key',
+  url || 'https://invalid.invalid',
+  anonKey || 'supabase-not-configured-placeholder',
   {
     auth: {
       persistSession: isSupabaseConfigured,

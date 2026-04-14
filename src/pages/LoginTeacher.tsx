@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { requireTeacher } from '../lib/role';
 import { Presentation, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
+import AppShareQrPanel from '../components/AppShareQrPanel';
 
 export default function LoginTeacher() {
   const [email, setEmail] = useState('');
@@ -87,7 +88,7 @@ export default function LoginTeacher() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-slate-50 to-blue-50 p-6 py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -175,6 +176,9 @@ export default function LoginTeacher() {
           </button>
         </div>
       </motion.div>
+      <div className="w-full max-w-lg shrink-0">
+        <AppShareQrPanel variant="compact" />
+      </div>
     </div>
   );
 }

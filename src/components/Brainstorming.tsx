@@ -456,8 +456,8 @@ export default function Brainstorming({
                 </div>
                 <div className={`flex min-h-0 flex-1 flex-col ${BOARD_PRESENTATION.gridGap} overflow-y-auto p-4`}>
                   {orphan.map((sticky) => (
+                    <React.Fragment key={sticky.id}>
                     <PresentationNoteCard
-                      key={sticky.id}
                       sticky={sticky}
                       showAuthorOnStickies={showAuthorOnStickies}
                       canModerate={canModerate}
@@ -467,6 +467,7 @@ export default function Brainstorming({
                       onApprove={() => void approveSticky(sticky.id)}
                       onDelete={() => void deleteSticky(sticky.id)}
                     />
+                    </React.Fragment>
                   ))}
                   {orphan.length === 0 && (
                     <p className="py-6 text-center text-sm text-slate-400">Keine Ideen ohne Spalte.</p>
@@ -493,8 +494,8 @@ export default function Brainstorming({
                     {notes
                       .filter((n) => n.underHeadingId === h.id)
                       .map((sticky) => (
+                        <React.Fragment key={sticky.id}>
                         <PresentationNoteCard
-                          key={sticky.id}
                           sticky={sticky}
                           showAuthorOnStickies={showAuthorOnStickies}
                           canModerate={canModerate}
@@ -504,6 +505,7 @@ export default function Brainstorming({
                           onApprove={() => void approveSticky(sticky.id)}
                           onDelete={() => void deleteSticky(sticky.id)}
                         />
+                        </React.Fragment>
                       ))}
                     {notes.filter((n) => n.underHeadingId === h.id).length === 0 && (
                       <p className="py-6 text-center text-sm text-slate-400">Noch keine Ideen in dieser Spalte.</p>
@@ -515,8 +517,8 @@ export default function Brainstorming({
           ) : (
             <div className="mx-auto grid w-full max-w-[1680px] grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3 lg:gap-6 xl:grid-cols-4 2xl:grid-cols-5">
               {notes.map((sticky) => (
+                <React.Fragment key={sticky.id}>
                 <PresentationNoteCard
-                  key={sticky.id}
                   sticky={sticky}
                   showAuthorOnStickies={showAuthorOnStickies}
                   canModerate={canModerate}
@@ -526,6 +528,7 @@ export default function Brainstorming({
                   onApprove={() => void approveSticky(sticky.id)}
                   onDelete={() => void deleteSticky(sticky.id)}
                 />
+                </React.Fragment>
               ))}
               {notes.length === 0 && (
                 <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white/60 py-16 text-center text-slate-500">

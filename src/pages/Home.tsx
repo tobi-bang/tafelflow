@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GraduationCap, Users, Presentation, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
+import AppShareQrPanel from '../components/AppShareQrPanel';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -75,8 +76,11 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-slate-200 py-12 bg-white">
-        <div className="max-w-7xl mx-auto px-6 text-center text-slate-500">
-          <p>© 2026 TafelFlow. TobCreator</p>
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="mx-auto mb-10 max-w-2xl">
+            <AppShareQrPanel defaultPath="/" />
+          </div>
+          <p className="text-center text-slate-500">© 2026 TafelFlow. TobCreator</p>
         </div>
       </footer>
     </div>
