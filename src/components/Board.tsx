@@ -1077,7 +1077,10 @@ export default function Board({
         </div>
       )}
 
-      <div className="absolute left-0 right-0 top-0 z-0 overflow-hidden touch-none max-md:top-11 max-md:bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:inset-0">
+      <div
+        data-board-export-root
+        className="absolute left-0 right-0 top-0 z-0 overflow-hidden touch-none max-md:top-11 max-md:bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:inset-0"
+      >
         <div
           className="absolute inset-0"
           style={{

@@ -1,9 +1,7 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import {
   BarChart3,
   ChevronLeft,
@@ -59,6 +57,11 @@ import {
   fetchSessionExportData,
   safeExportBasename,
 } from '../lib/sessionExport';
+import {
+  BoardPdfExportError,
+  downloadBoardViewportAsPdf,
+  waitForBoardExportRoot,
+} from '../lib/boardSnapshotPdf';
 
 type Tab = SessionTabId;
 
@@ -119,13 +122,13 @@ export default function SessionView() {
   const [boardSelectModuleId, setBoardSelectModuleId] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<'pdf' | 'txt' | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportBoardError, setExportBoardError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   /** Option B: klassische linke Icon-Leiste (Standard: ausgeblendet) */
   const [legacyToolRailOpen, setLegacyToolRailOpen] = useState(readLegacyToolRailPreference);
   const [boardTimerOpen, setBoardTimerOpen] = useState(false);
 
   const navigate = useNavigate();
-  const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -267,21 +270,46 @@ export default function SessionView() {
   };
 
   const handleExportBoardSnapshot = async () => {
-    if (!mainRef.current || isExporting || !session) return;
+    if (!session || isExporting) return;
+    if (!participantTabs.includes('board')) {
+      setExportBoardError('Die gemeinsame Tafel ist für diese Sitzung nicht freigeschaltet.');
+      return;
+    }
+
+    setExportBoardError(null);
     setIsExporting(true);
+    const previousTab = activeTab;
+    const switchedForExport = previousTab !== 'board';
+    if (switchedForExport) {
+      setActiveTab('board');
+    }
+
     try {
-      const canvas = await html2canvas(mainRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${safeExportBasename(session.name)}-Tafel.pdf`);
+      const el = await waitForBoardExportRoot({ timeoutMs: 6000 });
+      if (!el) {
+        throw new BoardPdfExportError(
+          'Die Tafel ist nicht bereit. Bitte „Gemeinsame Tafel“ öffnen und erneut versuchen.',
+          'AREA_MISSING'
+        );
+      }
+      const d = new Date();
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const base = `${safeExportBasename(session.name)}-Tafel-${dateStr}`;
+      await downloadBoardViewportAsPdf(el, base);
     } catch (e) {
       console.error(e);
+      if (e instanceof BoardPdfExportError) {
+        setExportBoardError(e.message);
+      } else if (e instanceof Error) {
+        setExportBoardError(`PDF-Export fehlgeschlagen: ${e.message}`);
+      } else {
+        setExportBoardError('PDF-Export fehlgeschlagen. Bitte Seite neu laden und erneut versuchen.');
+      }
     } finally {
       setIsExporting(false);
+      if (switchedForExport) {
+        setActiveTab(previousTab);
+      }
     }
   };
 
@@ -436,7 +464,10 @@ export default function SessionView() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowExportModal(true)}
+                onClick={() => {
+                  setExportBoardError(null);
+                  setShowExportModal(true);
+                }}
                 className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-700 font-semibold text-sm"
                 title="Ergebnisse speichern"
               >
@@ -483,7 +514,7 @@ export default function SessionView() {
           </nav>
         )}
 
-        <main className="flex-1 relative overflow-hidden bg-slate-100 min-w-0 w-full" ref={mainRef}>
+        <main className="flex-1 relative overflow-hidden bg-slate-100 min-w-0 w-full">
           {studentBlocked && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-slate-700 z-10 bg-slate-50">
               <p className="font-bold text-slate-900 text-xl">Sitzung ist beendet oder gesperrt</p>
@@ -744,10 +775,24 @@ export default function SessionView() {
       )}
 
       {showExportModal && isTeacher && (
-        <Modal onClose={() => setShowExportModal(false)} title="Ergebnisse festhalten">
+        <Modal
+          onClose={() => {
+            setShowExportModal(false);
+            setExportBoardError(null);
+          }}
+          title="Ergebnisse festhalten"
+        >
           <p className="text-slate-600 text-sm mb-6">
             Protokoll enthält Ideen (mit Überschriften), Umfrage-Auszählung und Wortwolke. Dateien landen im Download-Ordner.
           </p>
+          {exportBoardError && (
+            <div
+              className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+              role="alert"
+            >
+              {exportBoardError}
+            </div>
+          )}
           <div className="space-y-3">
             <button
               type="button"
@@ -784,7 +829,7 @@ export default function SessionView() {
             <button
               type="button"
               onClick={() => void handleExportBoardSnapshot()}
-              disabled={isExporting || activeTab !== 'board'}
+              disabled={isExporting || !participantTabs.includes('board')}
               className="w-full flex items-center gap-3 p-4 rounded-2xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50/50 text-left transition-all disabled:opacity-50"
             >
               {isExporting ? (
@@ -794,8 +839,12 @@ export default function SessionView() {
               )}
               <div>
                 <div className="font-bold text-slate-900">Tafel als PDF (Screenshot)</div>
-                  <div className="text-xs text-slate-500">
-                  {activeTab === 'board' ? 'Zeichnungen der Tafel' : 'Bitte zuerst das Tool „Gemeinsame Tafel“ öffnen (Tools-Menü)'}
+                <div className="text-xs text-slate-500">
+                  {isExporting
+                    ? 'Screenshot und PDF werden erzeugt …'
+                    : activeTab === 'board'
+                      ? 'Nur die Tafelfläche (Zeichnungen & Module), ohne Werkzeugleisten'
+                      : 'Wechselt kurz zur Tafel, erstellt das PDF und kehrt dann zum aktuellen Tool zurück'}
                 </div>
               </div>
             </button>
