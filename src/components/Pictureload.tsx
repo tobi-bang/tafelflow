@@ -4,11 +4,13 @@ import { rowToPictureloadImage } from '../lib/dbMap';
 import type { PictureloadImage, PictureloadModerationStatus, SessionPermissions } from '../types';
 import {
   Ban,
+  Camera,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ImagePlus,
+  Images,
   Loader2,
   Trash2,
   UserRound,
@@ -279,11 +281,15 @@ export default function Pictureload({
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError(null);
     setUploadFileErrors([]);
-    const list = e.target.files;
-    e.target.value = '';
-    if (!list?.length || !canUpload || uploading) return;
 
-    const files = Array.from(list);
+    const input = e.target;
+    // Wichtig: FileList ist in WebKit/Blink oft an das Input-Element gebunden und wird durch
+    // value='' geleert. Zuerst in ein Array kopieren, sonst ist list.length nach dem Reset 0.
+    const files =
+      input.files && input.files.length > 0 ? Array.from(input.files) : [];
+    input.value = '';
+
+    if (!files.length || !canUpload || uploading) return;
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -429,7 +435,7 @@ export default function Pictureload({
       return 'Lade Fotos hoch (einzeln oder mehrere gleichzeitig). Die Lehrkraft entscheidet, ob sie auf der Wand erscheinen.';
     }
     if (canUpload) {
-      return 'Tippe auf „Fotos hochladen“ und wähle aus der Mediathek oder Kamera (iPhone: u. a. JPG/PNG/HEIC, je max. 6 MB). Mehrere Bilder auf einmal sind möglich.';
+      return 'Smartphone: „Mediathek“ (mehrere Bilder) oder „Kamera“ (ein Foto). Computer: „Fotos hochladen“. Formate z. B. JPG, PNG, HEIC – max. 6 MB pro Datei.';
     }
     return '';
   })();
@@ -493,44 +499,111 @@ export default function Pictureload({
               )}
             </div>
             {canUpload && (
-              <label
-                className={`relative inline-flex min-h-[52px] min-w-[12rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition-[transform,opacity,background-color] hover:bg-blue-700 active:scale-[0.98] sm:min-w-[200px] ${
-                  uploading || bulkBusy ? 'pointer-events-none opacity-60' : ''
-                } has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-blue-600`}
-                aria-label="Fotos aus Mediathek oder Kamera auswählen und hochladen"
-              >
-                <input
-                  type="file"
-                  accept={ACCEPT}
-                  multiple
-                  disabled={uploading || bulkBusy}
-                  className="absolute inset-0 z-20 h-full min-h-[52px] w-full cursor-pointer text-[16px] leading-none opacity-0 disabled:cursor-not-allowed"
-                  onChange={onFileChange}
-                />
-                <span className="pointer-events-none relative z-10 flex flex-col items-center gap-0.5">
+              <>
+                {/* iPhone / schmale Viewports: zwei native Inputs (Mediathek vs. Kamera) – zuverlässiger als ein Feld mit capture */}
+                <div
+                  className={`grid w-full max-w-md shrink-0 grid-cols-2 gap-2 md:hidden ${
+                    bulkBusy && !uploading ? 'pointer-events-none opacity-60' : ''
+                  }`}
+                >
                   {uploading ? (
-                    <>
+                    <div
+                      className="col-span-2 flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-3 text-center text-xs font-bold text-white"
+                      role="status"
+                      aria-live="polite"
+                    >
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
                         Upload läuft …
                       </span>
                       {uploadProgress && (
-                        <span className="text-xs font-semibold text-blue-100">
+                        <span className="text-[11px] font-semibold text-blue-100">
                           {uploadProgress.current} von {uploadProgress.total} Dateien
                         </span>
                       )}
-                    </>
+                    </div>
                   ) : (
                     <>
-                      <span className="inline-flex items-center gap-2">
-                        <ImagePlus className="h-5 w-5" aria-hidden />
-                        Fotos hochladen
-                      </span>
-                      <span className="text-[11px] font-semibold text-blue-100">Mehrfachauswahl möglich</span>
+                      <label
+                        className="relative flex min-h-[56px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-blue-600 px-2 py-2 text-center text-xs font-bold text-white shadow-sm transition-[transform,background-color] hover:bg-blue-700 active:scale-[0.98] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-blue-600"
+                        aria-label="Fotos aus der Mediathek auswählen"
+                      >
+                        <input
+                          type="file"
+                          accept={ACCEPT}
+                          multiple
+                          disabled={bulkBusy}
+                          className="absolute inset-0 z-20 h-full min-h-[56px] w-full cursor-pointer text-[16px] leading-none opacity-0 disabled:cursor-not-allowed"
+                          onChange={onFileChange}
+                        />
+                        <span className="pointer-events-none relative z-10 flex flex-col items-center gap-0.5">
+                          <Images className="h-5 w-5 shrink-0" aria-hidden />
+                          <span className="leading-tight">Mediathek</span>
+                          <span className="text-[10px] font-semibold text-blue-100">Mehrere</span>
+                        </span>
+                      </label>
+                      <label
+                        className="relative flex min-h-[56px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl bg-slate-700 px-2 py-2 text-center text-xs font-bold text-white shadow-sm transition-[transform,background-color] hover:bg-slate-800 active:scale-[0.98] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-slate-700"
+                        aria-label="Foto mit der Kamera aufnehmen"
+                      >
+                        <input
+                          type="file"
+                          accept={ACCEPT}
+                          capture="environment"
+                          disabled={bulkBusy}
+                          className="absolute inset-0 z-20 h-full min-h-[56px] w-full cursor-pointer text-[16px] leading-none opacity-0 disabled:cursor-not-allowed"
+                          onChange={onFileChange}
+                        />
+                        <span className="pointer-events-none relative z-10 flex flex-col items-center gap-0.5">
+                          <Camera className="h-5 w-5 shrink-0" aria-hidden />
+                          <span className="leading-tight">Kamera</span>
+                          <span className="text-[10px] font-semibold text-slate-200">Ein Foto</span>
+                        </span>
+                      </label>
                     </>
                   )}
-                </span>
-              </label>
+                </div>
+
+                {/* Tablet/Desktop: ein kombinierter Upload (Mehrfachauswahl) */}
+                <label
+                  className={`relative hidden min-h-[52px] min-w-[12rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition-[transform,opacity,background-color] hover:bg-blue-700 active:scale-[0.98] sm:min-w-[200px] md:inline-flex ${
+                    uploading || bulkBusy ? 'pointer-events-none opacity-60' : ''
+                  } has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-blue-600`}
+                  aria-label="Fotos aus Mediathek auswählen und hochladen"
+                >
+                  <input
+                    type="file"
+                    accept={ACCEPT}
+                    multiple
+                    disabled={uploading || bulkBusy}
+                    className="absolute inset-0 z-20 h-full min-h-[52px] w-full cursor-pointer text-[16px] leading-none opacity-0 disabled:cursor-not-allowed"
+                    onChange={onFileChange}
+                  />
+                  <span className="pointer-events-none relative z-10 flex flex-col items-center gap-0.5">
+                    {uploading ? (
+                      <>
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                          Upload läuft …
+                        </span>
+                        {uploadProgress && (
+                          <span className="text-xs font-semibold text-blue-100">
+                            {uploadProgress.current} von {uploadProgress.total} Dateien
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-2">
+                          <ImagePlus className="h-5 w-5" aria-hidden />
+                          Fotos hochladen
+                        </span>
+                        <span className="text-[11px] font-semibold text-blue-100">Mehrfachauswahl möglich</span>
+                      </>
+                    )}
+                  </span>
+                </label>
+              </>
             )}
           </div>
 
