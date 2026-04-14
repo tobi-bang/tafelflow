@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToBoardObject } from '../lib/dbMap';
 import type { BoardModule, BoardObject, BoardRole, SessionPermissions } from '../types';
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eraser, Hand, MousePointer2, Pencil, Trash2 } from 'lucide-react';
 import type { SessionTabId } from '../lib/sessionToolMeta';
 import { moduleRegistry, moduleRegistryList } from '../lib/moduleRegistry';
 import { createBoardModule } from '../lib/boardModules';
@@ -14,6 +14,43 @@ import {
   getObjectPageId,
   readBoardModuleFromObject,
 } from '../lib/boardState';
+
+export type ToolMode = 'select' | 'pen' | 'eraser' | 'pan';
+
+function distSqPointSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) {
+    const vx = px - x1;
+    const vy = py - y1;
+    return vx * vx + vy * vy;
+  }
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const nx = x1 + t * dx;
+  const ny = y1 + t * dy;
+  const vx = px - nx;
+  const vy = py - ny;
+  return vx * vx + vy * vy;
+}
+
+function minDistSqToPolyline(points: { x: number; y: number }[], px: number, py: number): number {
+  if (points.length < 2) return Infinity;
+  let min = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const d = distSqPointSegment(px, py, points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
+    if (d < min) min = d;
+  }
+  return min;
+}
 
 interface BoardProps {
   sessionId: string;
@@ -35,7 +72,9 @@ export default function Board({
   onHandledSelectModuleId,
 }: BoardProps) {
   const [objects, setObjects] = useState<BoardObject[]>([]);
-  const [tool, setTool] = useState<'pencil' | 'eraser'>('pencil');
+  const [toolMode, setToolMode] = useState<ToolMode>('pen');
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const [color, setColor] = useState('#2563eb');
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
@@ -44,6 +83,11 @@ export default function Board({
   const pathDraftRef = useRef<{ x: number; y: number }[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const panDragRef = useRef<{ startClientX: number; startClientY: number; originX: number; originY: number } | null>(
+    null
+  );
+  const isErasingRef = useRef(false);
+  const erasedPathIdsRef = useRef<Set<string>>(new Set());
   const pageStripRef = useRef<HTMLDivElement>(null);
   const activePageTabRef = useRef<HTMLButtonElement>(null);
   const persistTimerRef = useRef<Record<string, number>>({});
@@ -131,6 +175,11 @@ export default function Board({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManageModules, sessionId]);
 
+  useEffect(() => {
+    if (canDraw) return;
+    if (toolMode === 'pen' || toolMode === 'eraser') setToolMode('select');
+  }, [canDraw, toolMode]);
+
   const publishActivePage = async (pageId: string) => {
     if (!canManageModules) return;
     const existingMeta = objects.find((o) => {
@@ -159,27 +208,125 @@ export default function Board({
     if (error) console.error(error);
   };
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
+  const getCoordinates = (e: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
     if (!svgRef.current) return { x: 0, y: 0 };
     const rect = svgRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const clientX = 'touches' in e && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!canDraw || tool === 'eraser') return;
-    setIsDrawing(true);
-    const { x, y } = getCoordinates(e);
-    pathDraftRef.current = [{ x, y }];
-    setCurrentPath(pathDraftRef.current);
+  const eraseAtPoint = async (x: number, y: number) => {
+    if (!canDraw) return;
+    const strokeW = presentationMode ? 6 : 3;
+    const pad = 12;
+    const thrSq = (strokeW + pad) * (strokeW + pad);
+    const candidates = paths.filter((p) => minDistSqToPolyline(p.points, x, y) <= thrSq);
+    const newHits = candidates.filter((p) => !erasedPathIdsRef.current.has(p.id));
+    if (newHits.length === 0) return;
+    for (const p of newHits) erasedPathIdsRef.current.add(p.id);
+    const ids = newHits.map((p) => p.id);
+    setObjects((prev) => prev.filter((o) => !ids.includes(o.id)));
+    for (const id of ids) {
+      const { error } = await supabase.from('board_objects').delete().eq('id', id);
+      if (error) console.error(error);
+    }
   };
 
-  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+  const draw = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDrawing) return;
     const { x, y } = getCoordinates(e);
     pathDraftRef.current = [...pathDraftRef.current, { x, y }];
     setCurrentPath(pathDraftRef.current);
+  };
+
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    if (toolMode === 'pan') {
+      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+      panDragRef.current = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        originX: panOffset.x,
+        originY: panOffset.y,
+      };
+      setIsPanning(true);
+      return;
+    }
+    if (toolMode === 'select') {
+      setSelectedModuleId(null);
+      return;
+    }
+    if (!canDraw) return;
+    if (toolMode === 'pen') {
+      setIsDrawing(true);
+      const { x, y } = getCoordinates(e);
+      pathDraftRef.current = [{ x, y }];
+      setCurrentPath(pathDraftRef.current);
+      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+      return;
+    }
+    if (toolMode === 'eraser') {
+      (e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId);
+      isErasingRef.current = true;
+      erasedPathIdsRef.current.clear();
+      const { x, y } = getCoordinates(e);
+      void eraseAtPoint(x, y);
+    }
+  };
+
+  const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (toolMode === 'pan' && panDragRef.current) {
+      const dx = e.clientX - panDragRef.current.startClientX;
+      const dy = e.clientY - panDragRef.current.startClientY;
+      setPanOffset({
+        x: panDragRef.current.originX + dx,
+        y: panDragRef.current.originY + dy,
+      });
+      return;
+    }
+    if (toolMode === 'pen' && isDrawing) {
+      draw(e);
+      return;
+    }
+    if (toolMode === 'eraser' && isErasingRef.current) {
+      const { x, y } = getCoordinates(e);
+      void eraseAtPoint(x, y);
+    }
+  };
+
+  const releaseSvgPointer = (e: React.PointerEvent<SVGSVGElement>) => {
+    try {
+      (e.currentTarget as SVGSVGElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* bereits freigegeben */
+    }
+  };
+
+  const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (toolMode === 'pan') {
+      panDragRef.current = null;
+      setIsPanning(false);
+      releaseSvgPointer(e);
+      return;
+    }
+    if (toolMode === 'pen') {
+      releaseSvgPointer(e);
+      void endDrawing();
+      return;
+    }
+    if (toolMode === 'eraser') {
+      isErasingRef.current = false;
+      erasedPathIdsRef.current.clear();
+      releaseSvgPointer(e);
+    }
+  };
+
+  const handleSvgPointerLeave = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (toolMode !== 'pan') return;
+    panDragRef.current = null;
+    setIsPanning(false);
+    releaseSvgPointer(e);
   };
 
   const endDrawing = async () => {
@@ -405,22 +552,48 @@ export default function Board({
         }`}
       >
         <ToolButton
-          active={tool === 'pencil'}
-          onClick={() => setTool('pencil')}
+          active={toolMode === 'select'}
+          onClick={() => setToolMode('select')}
+          title="Auswahl"
+          aria-label="Auswahlmodus"
+          icon={<MousePointer2 className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+          large={presentationMode}
+        />
+        <ToolButton
+          active={toolMode === 'pen'}
+          onClick={() => canDraw && setToolMode('pen')}
+          title={canDraw ? 'Stift' : 'Zeichnen ist deaktiviert'}
+          aria-label="Stift"
+          disabled={!canDraw}
           icon={<Pencil className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
           large={presentationMode}
         />
         <ToolButton
-          active={tool === 'eraser'}
-          onClick={() => setTool('eraser')}
-          icon={<Trash2 className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+          active={toolMode === 'eraser'}
+          onClick={() => canDraw && setToolMode('eraser')}
+          title={canDraw ? 'Radierer' : 'Radieren ist deaktiviert'}
+          aria-label="Radierer"
+          disabled={!canDraw}
+          icon={<Eraser className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
           large={presentationMode}
         />
-        <div className="w-px h-6 bg-slate-200 mx-1" />
-        <ColorButton color="#2563eb" active={color === '#2563eb'} onClick={() => setColor('#2563eb')} />
-        <ColorButton color="#dc2626" active={color === '#dc2626'} onClick={() => setColor('#dc2626')} />
-        <ColorButton color="#16a34a" active={color === '#16a34a'} onClick={() => setColor('#16a34a')} />
-        <ColorButton color="#000000" active={color === '#000000'} onClick={() => setColor('#000000')} />
+        <ToolButton
+          active={toolMode === 'pan'}
+          onClick={() => setToolMode('pan')}
+          title="Hand (Verschieben)"
+          aria-label="Handmodus"
+          icon={<Hand className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+          large={presentationMode}
+        />
+        {toolMode === 'pen' && canDraw && (
+          <>
+            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <ColorButton color="#2563eb" active={color === '#2563eb'} onClick={() => setColor('#2563eb')} />
+            <ColorButton color="#dc2626" active={color === '#dc2626'} onClick={() => setColor('#dc2626')} />
+            <ColorButton color="#16a34a" active={color === '#16a34a'} onClick={() => setColor('#16a34a')} />
+            <ColorButton color="#000000" active={color === '#000000'} onClick={() => setColor('#000000')} />
+          </>
+        )}
         {isTeacher && (
           <>
             <div className="w-px h-6 bg-slate-200 mx-1" />
@@ -536,41 +709,57 @@ export default function Board({
         )}
       </div>
 
-      <svg
-        ref={svgRef}
-        className="pointer-events-auto absolute inset-0 z-0 h-full w-full cursor-crosshair touch-none"
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={endDrawing}
-        onMouseLeave={endDrawing}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={endDrawing}
-      >
-        {paths.map((obj) => (
-          <Fragment key={obj.id}>
-            <BoardPath
-              points={obj.points}
-              color={obj.color}
-              strokeWidth={presentationMode ? 6 : 3}
-            />
-          </Fragment>
-        ))}
-        {isDrawing && (
-          <BoardPath
-            points={currentPath}
-            color={color}
-            isPreview
-            strokeWidth={presentationMode ? 6 : 3}
-          />
-        )}
-      </svg>
+      <div className="absolute inset-0 z-0 overflow-hidden touch-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
+          }}
+        >
+          <svg
+            ref={svgRef}
+            className={`pointer-events-auto absolute inset-0 z-0 h-full w-full touch-none ${
+              toolMode === 'pen'
+                ? 'cursor-crosshair'
+                : toolMode === 'eraser'
+                  ? 'cursor-cell'
+                  : toolMode === 'pan'
+                    ? isPanning
+                      ? 'cursor-grabbing'
+                      : 'cursor-grab'
+                    : 'cursor-default'
+            }`}
+            onPointerDown={handleSvgPointerDown}
+            onPointerMove={handleSvgPointerMove}
+            onPointerUp={handleSvgPointerUp}
+            onPointerCancel={handleSvgPointerUp}
+            onPointerLeave={handleSvgPointerLeave}
+          >
+            {paths.map((obj) => (
+              <Fragment key={obj.id}>
+                <BoardPath
+                  points={obj.points}
+                  color={obj.color}
+                  strokeWidth={presentationMode ? 6 : 3}
+                />
+              </Fragment>
+            ))}
+            {isDrawing && (
+              <BoardPath
+                points={currentPath}
+                color={color}
+                isPreview
+                strokeWidth={presentationMode ? 6 : 3}
+              />
+            )}
+          </svg>
 
-      <div className="pointer-events-none absolute inset-0 z-10">
+          <div className="pointer-events-none absolute inset-0 z-10">
         {modules.map((module) => (
           <Fragment key={module.id}>
           <ModuleWrapper
             module={module}
+            pointerEventsEnabled={toolMode !== 'pan'}
             selected={selectedModuleId === module.id}
             draggable={canManageModules}
             deletable={canManageModules}
@@ -615,6 +804,8 @@ export default function Board({
           </ModuleWrapper>
           </Fragment>
         ))}
+          </div>
+        </div>
       </div>
 
       {!canDraw && (
@@ -685,17 +876,28 @@ function ToolButton({
   onClick,
   icon,
   large,
+  title,
+  'aria-label': ariaLabel,
+  disabled = false,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   large?: boolean;
+  title?: string;
+  'aria-label'?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      title={title}
+      aria-label={ariaLabel ?? title}
+      disabled={disabled}
       onClick={onClick}
-      className={`${large ? 'p-4' : 'p-2.5'} rounded-xl transition-all ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-slate-500 hover:bg-slate-100'}`}
+      className={`${large ? 'p-4' : 'p-2.5'} rounded-xl transition-all ${
+        disabled ? 'cursor-not-allowed opacity-40 text-slate-400' : active ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-slate-500 hover:bg-slate-100'
+      }`}
     >
       {icon}
     </button>

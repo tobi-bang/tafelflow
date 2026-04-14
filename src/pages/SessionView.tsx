@@ -53,7 +53,6 @@ import {
   fetchSessionExportData,
   safeExportBasename,
 } from '../lib/sessionExport';
-import { createBoardModule, tabToModuleType } from '../lib/boardModules';
 
 type Tab = SessionTabId;
 
@@ -630,20 +629,8 @@ export default function SessionView() {
               <button
                 key={tab}
                 type="button"
-                onClick={async () => {
-                  const moduleType = tabToModuleType(tab);
-                  if (effectiveIsTeacher && moduleType && session) {
-                    try {
-                      const id = await createBoardModule(session.id, moduleType);
-                      setBoardSelectModuleId(id);
-                      setActiveTab('board');
-                    } catch (err) {
-                      console.error(err);
-                      alert(err instanceof Error ? err.message : 'Tool-Modul konnte nicht erstellt werden.');
-                    }
-                  } else {
-                    setActiveTab(tab);
-                  }
+                onClick={() => {
+                  setActiveTab(tab);
                   setShowToolPicker(false);
                 }}
                 className={`flex gap-3 p-4 rounded-2xl border text-left transition-all min-h-[72px] ${

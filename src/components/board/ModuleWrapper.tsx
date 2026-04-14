@@ -19,6 +19,8 @@ interface ModuleWrapperProps {
   onSelect: (id: string) => void;
   onMove: (id: string, next: { x: number; y: number }) => void;
   onDelete?: (id: string) => void;
+  /** false z. B. im Tafel-Handmodus, damit Verschieben nicht von Modulen blockiert wird */
+  pointerEventsEnabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -52,6 +54,7 @@ export default function ModuleWrapper({
   onSelect,
   onMove,
   onDelete,
+  pointerEventsEnabled = true,
   children,
 }: ModuleWrapperProps) {
   const dragRef = useRef<DragState | null>(null);
@@ -59,9 +62,9 @@ export default function ModuleWrapper({
 
   return (
     <div
-      className={`absolute pointer-events-auto rounded-xl border bg-white shadow-sm overflow-hidden ${
-        selected ? 'border-blue-500 shadow-blue-100 ring-1 ring-blue-300/70' : 'border-slate-300'
-      }`}
+      className={`absolute rounded-xl border bg-white shadow-sm overflow-hidden ${
+        pointerEventsEnabled ? 'pointer-events-auto' : 'pointer-events-none'
+      } ${selected ? 'border-blue-500 shadow-blue-100 ring-1 ring-blue-300/70' : 'border-slate-300'}`}
       style={{
         left: module.x,
         top: module.y,
