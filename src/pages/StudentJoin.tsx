@@ -167,11 +167,11 @@ export default function StudentJoin() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-6">
+    <div className="flex min-h-dvh w-full max-w-full flex-col items-center gap-6 overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50 px-4 py-6 sm:min-h-screen sm:justify-center sm:px-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100"
+        className="w-full max-w-md shrink-0 rounded-3xl border border-slate-100 bg-white p-5 shadow-2xl sm:p-8"
       >
         <div className="flex items-center gap-2 mb-8 justify-center">
           <div className="bg-blue-600 p-2 rounded-lg">
@@ -197,16 +197,16 @@ export default function StudentJoin() {
 
         <form onSubmit={handleJoin} className="space-y-6">
           {targetSessionId && rolePreset === null && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-2">
+            <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={() => navigate(`/session/${targetSessionId}`)}
-                className="flex-1 px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 font-semibold text-sm hover:bg-slate-50"
+                className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-1"
               >
                 Als Lehrkraft öffnen
               </button>
-              <div className="text-xs text-slate-400 font-semibold">oder</div>
-              <div className="flex-1 px-3 py-2 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 font-semibold text-sm text-center">
+              <div className="hidden text-center text-xs font-semibold text-slate-400 sm:block">oder</div>
+              <div className="min-h-11 w-full rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-center text-sm font-semibold text-blue-700 sm:flex-1">
                 Als SuS beitreten
               </div>
             </div>
@@ -219,7 +219,7 @@ export default function StudentJoin() {
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                 placeholder="z. B. AB12CD34"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none font-mono uppercase"
+                className="min-h-12 w-full rounded-xl border border-slate-200 px-4 py-3 font-mono text-base uppercase outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
@@ -233,7 +233,7 @@ export default function StudentJoin() {
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
                 placeholder="z. B. Team Blau"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+                className="min-h-12 w-full rounded-xl border border-slate-200 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
@@ -255,7 +255,7 @@ export default function StudentJoin() {
               !joinSettingsReady ||
               (nameRequired && !studentName.trim())
             }
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-lg transition-all hover:bg-blue-700 disabled:opacity-50 sm:py-4 sm:text-lg"
           >
             {loading ? 'Beitreten…' : roleChoice === 'teacher' ? 'Als Lehrkraft öffnen' : 'Sitzung beitreten'}
             {!loading && <ArrowRight className="w-5 h-5" />}
@@ -272,7 +272,7 @@ export default function StudentJoin() {
           </button>
         </div>
       </motion.div>
-      <div className="w-full max-w-lg shrink-0">
+      <div className="w-full max-w-md shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <AppShareQrPanel variant="compact" defaultPath="/join" />
       </div>
     </div>

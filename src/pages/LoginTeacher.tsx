@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase';
 import { requireTeacher } from '../lib/role';
 import { Presentation, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
-import AppShareQrPanel from '../components/AppShareQrPanel';
 
 export default function LoginTeacher() {
   const [email, setEmail] = useState('');
@@ -88,11 +87,11 @@ export default function LoginTeacher() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-slate-50 to-blue-50 p-6 py-10">
+    <div className="flex min-h-dvh w-full max-w-full flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-6 sm:min-h-screen sm:p-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl border border-slate-100"
+        className="w-full max-w-md rounded-3xl border border-slate-100 bg-white p-5 shadow-2xl sm:p-8"
       >
         <div className="flex items-center gap-2 mb-8 justify-center">
           <div className="bg-blue-600 p-2 rounded-lg">
@@ -137,7 +136,7 @@ export default function LoginTeacher() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@schule.de"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="min-h-12 w-full rounded-xl border border-slate-200 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -148,7 +147,7 @@ export default function LoginTeacher() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="min-h-12 w-full rounded-xl border border-slate-200 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -156,7 +155,7 @@ export default function LoginTeacher() {
           <button
             type="submit"
             disabled={loading || sessionBlocked}
-            className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3.5 text-base font-bold text-white shadow-lg transition-all hover:bg-blue-700 disabled:opacity-50 sm:py-4 sm:text-lg"
           >
             {loading ? 'Anmelden…' : 'Anmelden'}
             {!loading && <LogIn className="w-5 h-5" />}
@@ -176,9 +175,6 @@ export default function LoginTeacher() {
           </button>
         </div>
       </motion.div>
-      <div className="w-full max-w-lg shrink-0">
-        <AppShareQrPanel variant="compact" />
-      </div>
     </div>
   );
 }
