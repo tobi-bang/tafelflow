@@ -304,8 +304,8 @@ export default function SessionView() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
-      <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <header className="min-h-14 md:h-16 bg-white border-b border-slate-200 px-2 sm:px-4 md:px-6 flex flex-wrap items-center justify-between gap-y-2 shrink-0 z-20 py-2 md:py-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 md:flex-initial">
           <button
             type="button"
             onClick={() => navigate(isTeacher && !previewAsStudent ? '/teacher' : '/')}
@@ -334,9 +334,9 @@ export default function SessionView() {
               <PanelLeft className="w-5 h-5" />
             </button>
           )}
-          <div className="flex flex-col min-w-0">
-            <h1 className="text-lg font-bold text-slate-900 leading-none truncate">{session.name}</h1>
-            <span className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">
+          <div className="flex flex-col min-w-0 max-w-[min(100%,12rem)] sm:max-w-none">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight truncate">{session.name}</h1>
+            <span className="text-[10px] sm:text-xs text-slate-500 font-medium uppercase tracking-wider mt-0.5 truncate md:mt-1">
               {effectiveIsTeacher
                 ? `Lehrkraft · Raumcode ${session.room_code}`
                 : isTeacher && previewAsStudent
@@ -346,7 +346,7 @@ export default function SessionView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none touch-pan-x max-md:w-full max-md:justify-end max-md:pb-0.5 md:max-w-none md:overflow-visible">
           {showToolsInHeader && (
             <button
               type="button"
@@ -416,7 +416,7 @@ export default function SessionView() {
               <button
                 type="button"
                 onClick={toggleBrowserFullscreen}
-                className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-600"
+                className="p-2.5 min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-colors text-slate-600"
                 title="Vollbild"
               >
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
@@ -433,7 +433,7 @@ export default function SessionView() {
               <button
                 type="button"
                 onClick={() => setShowSettings(true)}
-                className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-600"
+                className="p-2.5 min-w-[44px] min-h-[44px] shrink-0 flex items-center justify-center hover:bg-slate-100 rounded-xl transition-colors text-slate-600"
                 title="Einstellungen"
               >
                 <Settings className="w-5 h-5" />
@@ -898,7 +898,7 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden overscroll-behavior-contain bg-slate-900/50 p-4 backdrop-blur-sm sm:p-6"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden overscroll-behavior-contain bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-4 sm:pb-4 md:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -907,7 +907,7 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2 }}
-        className="my-auto flex min-h-0 w-full max-w-lg max-h-[min(92dvh,56rem)] flex-col rounded-3xl bg-white shadow-2xl"
+        className="my-auto flex min-h-0 w-full max-w-lg max-h-[min(92dvh,56rem)] flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl"
       >
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 pb-3 pt-5 sm:px-8 sm:pt-6">
           <h2 id={titleId} className="break-words pr-2 text-xl font-bold leading-tight text-slate-900 sm:text-2xl">
@@ -916,7 +916,7 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-full p-2 text-slate-500 hover:bg-slate-100"
+            className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full p-2 text-slate-500 hover:bg-slate-100 md:min-h-0 md:min-w-0"
             aria-label="Schließen"
           >
             <X className="h-5 w-5" />

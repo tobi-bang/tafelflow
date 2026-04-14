@@ -2,7 +2,16 @@ import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToBoardObject } from '../lib/dbMap';
 import type { BoardModule, BoardObject, BoardRole, SessionPermissions } from '../types';
-import { ChevronLeft, ChevronRight, Eraser, Hand, MousePointer2, Pencil, Trash2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eraser,
+  Hand,
+  MoreHorizontal,
+  MousePointer2,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import type { SessionTabId } from '../lib/sessionToolMeta';
 import { moduleRegistry, moduleRegistryList } from '../lib/moduleRegistry';
 import { createBoardModule } from '../lib/boardModules';
@@ -108,12 +117,16 @@ export default function Board({
   const erasedPathIdsRef = useRef<Set<string>>(new Set());
   const pageStripRef = useRef<HTMLDivElement>(null);
   const activePageTabRef = useRef<HTMLButtonElement>(null);
+  const activePageTabMobileRef = useRef<HTMLButtonElement>(null);
   const persistTimerRef = useRef<Record<string, number>>({});
   const [isCreatingPage, setIsCreatingPage] = useState(false);
+  /** Mobil: Bottom-Sheet „Weitere Werkzeuge“ (Farben, Module, Tafel leeren, Seitenverwaltung) */
+  const [mobileBoardSheetOpen, setMobileBoardSheetOpen] = useState(false);
 
   const canDraw = isTeacher || permissions.drawBoard;
   const boardRole: BoardRole = isTeacher ? 'teacher' : 'student';
   const canManageModules = canTeacherManageModule(boardRole);
+  const mobileBoardSheetHasContent = canDraw || isTeacher || canManageModules;
   const snapshot = useMemo(() => buildBoardState(objects, activePageId), [objects, activePageId]);
   const pages = snapshot.pages;
   const modules = snapshot.modules;
@@ -197,11 +210,13 @@ export default function Board({
   }, [pages, activePageId]);
 
   useEffect(() => {
-    activePageTabRef.current?.scrollIntoView({
+    const opts: ScrollIntoViewOptions = {
       behavior: 'smooth',
       block: 'nearest',
       inline: 'center',
-    });
+    };
+    activePageTabRef.current?.scrollIntoView(opts);
+    activePageTabMobileRef.current?.scrollIntoView(opts);
   }, [activePageId, pages]);
 
   useEffect(() => {
@@ -215,6 +230,15 @@ export default function Board({
     if (canDraw) return;
     if (toolMode === 'pen' || toolMode === 'eraser') setToolMode('select');
   }, [canDraw, toolMode]);
+
+  useEffect(() => {
+    if (!mobileBoardSheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileBoardSheetOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileBoardSheetOpen]);
 
   const publishActivePage = async (pageId: string) => {
     if (!canManageModules) return;
@@ -604,10 +628,11 @@ export default function Board({
   };
 
   return (
-    <div ref={boardRef} className="relative w-full h-full flex flex-col bg-white">
+    <div ref={boardRef} className="relative h-full min-h-0 w-full flex flex-col bg-white">
+      {/* Desktop: Werkzeugleiste */}
       <div
-        className={`pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 flex items-center ${
-          presentationMode ? 'p-4 gap-3' : 'p-2 gap-2'
+        className={`pointer-events-auto absolute left-1/2 top-4 z-30 hidden -translate-x-1/2 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white/90 shadow-xl backdrop-blur-md md:flex ${
+          presentationMode ? 'gap-3 p-4' : 'gap-2 p-2'
         }`}
       >
         <ToolButton
@@ -646,7 +671,7 @@ export default function Board({
         />
         {toolMode === 'pen' && canDraw && (
           <>
-            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <div className="mx-1 h-6 w-px bg-slate-200" />
             <ColorButton color="#2563eb" active={color === '#2563eb'} onClick={() => setColor('#2563eb')} />
             <ColorButton color="#dc2626" active={color === '#dc2626'} onClick={() => setColor('#dc2626')} />
             <ColorButton color="#16a34a" active={color === '#16a34a'} onClick={() => setColor('#16a34a')} />
@@ -655,11 +680,13 @@ export default function Board({
         )}
         {isTeacher && (
           <>
-            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <div className="mx-1 h-6 w-px bg-slate-200" />
             <button
               type="button"
               onClick={clearBoard}
-              className={`hover:bg-rose-50 text-rose-600 rounded-xl transition-colors ${presentationMode ? 'p-3' : 'p-2'}`}
+              className={`inline-flex shrink-0 items-center justify-center rounded-xl text-rose-600 transition-colors hover:bg-rose-50 ${
+                presentationMode ? 'p-3' : 'p-2'
+              }`}
               title="Tafelinhalt löschen"
               aria-label="Tafelinhalt löschen"
             >
@@ -669,13 +696,13 @@ export default function Board({
         )}
         {canManageModules && (
           <>
-            <div className="w-px h-6 bg-slate-200 mx-1" />
+            <div className="mx-1 h-6 w-px bg-slate-200" />
             {moduleRegistryList.map((definition) => (
               <button
                 key={definition.type}
                 type="button"
                 onClick={() => void createModule(definition.type)}
-                className="px-2 py-1.5 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 font-semibold"
+                className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-semibold hover:bg-slate-200"
                 title={`${definition.title} hinzufügen`}
                 aria-label={`${definition.title} hinzufügen`}
               >
@@ -686,10 +713,11 @@ export default function Board({
         )}
       </div>
 
-      <div className="pointer-events-auto absolute top-20 left-1/2 z-30 flex max-w-[96vw] -translate-x-1/2 items-center gap-1 rounded-2xl border border-slate-200 bg-white/95 py-2 pl-2 pr-3 shadow-md">
+      {/* Desktop: Seitenleiste */}
+      <div className="pointer-events-auto absolute left-1/2 top-20 z-30 hidden max-w-[96vw] -translate-x-1/2 flex-nowrap items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 py-2 pl-2 pr-3 shadow-md md:flex">
         <button
           type="button"
-          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          className="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
           aria-label="Vorherige Seite"
           disabled={pages.length < 2 || activePageIdx <= 0}
           onClick={goToPreviousPage}
@@ -707,7 +735,7 @@ export default function Board({
           ref={pageStripRef}
           role="tablist"
           aria-label="Tafelseiten"
-          className="flex max-w-[min(60vw,36rem)] min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:thin]"
+          className="flex min-w-0 max-w-[min(60vw,36rem)] flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:thin]"
         >
           {pages.map((p, tabIndex) => {
             const isActive = p.id === activePageId;
@@ -737,7 +765,7 @@ export default function Board({
         </div>
         <button
           type="button"
-          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          className="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
           aria-label="Nächste Seite"
           disabled={pages.length < 2 || activePageIdx < 0 || activePageIdx >= pages.length - 1}
           onClick={goToNextPage}
@@ -745,33 +773,33 @@ export default function Board({
           <ChevronRight className="h-5 w-5" />
         </button>
         {canManageModules && (
-          <div className="ml-1 flex shrink-0 flex-wrap items-center gap-1 border-l border-slate-200 pl-2">
+          <div className="ml-1 flex max-w-none flex-wrap items-center gap-1 overflow-visible border-slate-200 pl-2">
             <button
               type="button"
               disabled={isCreatingPage}
               onClick={() => void createPage(nextDefaultPageTitle(pages))}
-              className="rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-50"
+              className="shrink-0 rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-50"
             >
               + Seite
             </button>
             <button
               type="button"
               onClick={() => void renamePage(activePageId)}
-              className="rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+              className="shrink-0 rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
             >
               Umbenennen
             </button>
             <button
               type="button"
               onClick={() => void duplicatePage(activePageId)}
-              className="rounded-lg bg-amber-100 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200"
+              className="shrink-0 rounded-lg bg-amber-100 px-2 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200"
             >
               Duplizieren
             </button>
             <button
               type="button"
               onClick={() => void deletePage(activePageId)}
-              className="rounded-lg bg-rose-100 px-2 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-200"
+              className="shrink-0 rounded-lg bg-rose-100 px-2 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-200"
             >
               Löschen
             </button>
@@ -779,7 +807,277 @@ export default function Board({
         )}
       </div>
 
-      <div className="absolute inset-0 z-0 overflow-hidden touch-none">
+      {/* Mobil: kompakte Seitenzeile oben (Navigation + Tabs) */}
+      <div className="pointer-events-auto absolute left-0 right-0 top-0 z-30 flex h-11 items-center gap-0.5 border-b border-slate-200 bg-white/98 px-1 shadow-sm md:hidden">
+        <button
+          type="button"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Vorherige Seite"
+          disabled={pages.length < 2 || activePageIdx <= 0}
+          onClick={goToPreviousPage}
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div
+          className="min-w-[2.5rem] shrink-0 text-center text-[11px] font-bold tabular-nums leading-none text-slate-600"
+          aria-live="polite"
+          title="Seite"
+        >
+          {pages.length > 0 ? (
+            <>
+              <span className="text-sm text-slate-900">{displayPageNum}</span>
+              <span className="text-slate-400">/{pages.length}</span>
+            </>
+          ) : (
+            '–'
+          )}
+        </div>
+        <div
+          role="tablist"
+          aria-label="Tafelseiten"
+          className="scrollbar-none flex min-w-0 flex-1 touch-pan-x items-center gap-0.5 overflow-x-auto scroll-smooth py-0.5"
+        >
+          {pages.map((p, tabIndex) => {
+            const isActive = p.id === activePageId;
+            return (
+              <button
+                key={p.id}
+                ref={isActive ? activePageTabMobileRef : undefined}
+                type="button"
+                role="tab"
+                aria-selected={isActive ? 'true' : 'false'}
+                aria-current={isActive ? 'page' : undefined}
+                aria-label={`${p.title} (${tabIndex + 1} von ${pages.length})`}
+                onClick={() => {
+                  setActivePageId(p.id);
+                  if (canManageModules) void publishActivePage(p.id);
+                }}
+                className={`max-w-[5.5rem] shrink-0 truncate rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/50'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {p.title}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Nächste Seite"
+          disabled={pages.length < 2 || activePageIdx < 0 || activePageIdx >= pages.length - 1}
+          onClick={goToNextPage}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Mobil: feste Werkzeug-Dock unten */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/98 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] md:hidden"
+        aria-label="Tafelwerkzeuge (mobil)"
+      >
+        <div className="flex items-center justify-around px-0.5">
+          <ToolButton
+            active={toolMode === 'select'}
+            onClick={() => setToolMode('select')}
+            title="Auswahl"
+            aria-label="Auswahlmodus"
+            icon={<MousePointer2 className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+            large={presentationMode}
+            dock
+          />
+          <ToolButton
+            active={toolMode === 'pen'}
+            onClick={() => canDraw && setToolMode('pen')}
+            title={canDraw ? 'Stift' : 'Zeichnen ist deaktiviert'}
+            aria-label="Stift"
+            disabled={!canDraw}
+            icon={<Pencil className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+            large={presentationMode}
+            dock
+          />
+          <ToolButton
+            active={toolMode === 'eraser'}
+            onClick={() => canDraw && setToolMode('eraser')}
+            title={canDraw ? 'Radierer' : 'Radieren ist deaktiviert'}
+            aria-label="Radierer"
+            disabled={!canDraw}
+            icon={<Eraser className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+            large={presentationMode}
+            dock
+          />
+          <ToolButton
+            active={toolMode === 'pan'}
+            onClick={() => setToolMode('pan')}
+            title="Hand"
+            aria-label="Handmodus"
+            icon={<Hand className={presentationMode ? 'w-7 h-7' : 'w-5 h-5'} />}
+            large={presentationMode}
+            dock
+          />
+          {mobileBoardSheetHasContent && (
+            <button
+              type="button"
+              className="inline-flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 active:bg-slate-200"
+              aria-label="Weitere Werkzeuge, Farben und Module"
+              title="Mehr"
+              onClick={() => setMobileBoardSheetOpen(true)}
+            >
+              <MoreHorizontal className="h-6 w-6" />
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* Mobil: Bottom-Sheet (Farben, Module, Leeren, Seitenverwaltung) */}
+      {mobileBoardSheetOpen && (
+        <div className="md:hidden" role="presentation">
+          <button
+            type="button"
+            className="fixed inset-0 z-50 cursor-default bg-slate-900/45"
+            aria-label="Menü schließen"
+            onClick={() => setMobileBoardSheetOpen(false)}
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-[60] flex max-h-[min(72dvh,26rem)] flex-col rounded-t-2xl border border-slate-200 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-board-sheet-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <h2 id="mobile-board-sheet-title" className="text-sm font-bold text-slate-900">
+                Weitere Optionen
+              </h2>
+              <button
+                type="button"
+                className="min-h-11 min-w-11 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={() => setMobileBoardSheetOpen(false)}
+              >
+                Fertig
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              {canDraw && (
+                <section>
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Stiftfarbe</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(
+                      [
+                        ['#2563eb', 'Blau'],
+                        ['#dc2626', 'Rot'],
+                        ['#16a34a', 'Grün'],
+                        ['#000000', 'Schwarz'],
+                      ] as const
+                    ).map(([c, name]) => (
+                      <ColorButton
+                        key={c}
+                        color={c}
+                        active={color === c}
+                        onClick={() => {
+                          setColor(c);
+                          setToolMode('pen');
+                          setMobileBoardSheetOpen(false);
+                        }}
+                        label={name}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {isTeacher && (
+                <section>
+                  <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Tafel</p>
+                  <button
+                    type="button"
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                    onClick={() => {
+                      setMobileBoardSheetOpen(false);
+                      void clearBoard();
+                    }}
+                  >
+                    <Trash2 className="h-5 w-5 shrink-0" />
+                    Tafelinhalt löschen
+                  </button>
+                </section>
+              )}
+              {canManageModules && (
+                <>
+                  <section>
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Module</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {moduleRegistryList.map((definition) => (
+                        <button
+                          key={definition.type}
+                          type="button"
+                          className="min-h-12 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2 text-center text-xs font-semibold text-slate-800 hover:bg-slate-100 active:bg-slate-200"
+                          onClick={() => {
+                            setMobileBoardSheetOpen(false);
+                            void createModule(definition.type);
+                          }}
+                        >
+                          {definition.addLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                  <section>
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Seiten</p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        disabled={isCreatingPage}
+                        className="min-h-12 w-full rounded-xl bg-emerald-100 px-3 text-sm font-semibold text-emerald-900 hover:bg-emerald-200 disabled:opacity-50"
+                        onClick={() => {
+                          setMobileBoardSheetOpen(false);
+                          void createPage(nextDefaultPageTitle(pages));
+                        }}
+                      >
+                        + Neue Seite
+                      </button>
+                      <button
+                        type="button"
+                        className="min-h-12 w-full rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-800 hover:bg-slate-200"
+                        onClick={() => {
+                          setMobileBoardSheetOpen(false);
+                          void renamePage(activePageId);
+                        }}
+                      >
+                        Seite umbenennen
+                      </button>
+                      <button
+                        type="button"
+                        className="min-h-12 w-full rounded-xl bg-amber-100 px-3 text-sm font-semibold text-amber-950 hover:bg-amber-200"
+                        onClick={() => {
+                          setMobileBoardSheetOpen(false);
+                          void duplicatePage(activePageId);
+                        }}
+                      >
+                        Seite duplizieren
+                      </button>
+                      <button
+                        type="button"
+                        className="min-h-12 w-full rounded-xl bg-rose-100 px-3 text-sm font-semibold text-rose-900 hover:bg-rose-200"
+                        onClick={() => {
+                          setMobileBoardSheetOpen(false);
+                          void deletePage(activePageId);
+                        }}
+                      >
+                        Seite löschen
+                      </button>
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="absolute left-0 right-0 top-0 z-0 overflow-hidden touch-none max-md:top-11 max-md:bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:inset-0">
         <div
           className="absolute inset-0"
           style={{
@@ -879,7 +1177,7 @@ export default function Board({
       </div>
 
       {!canDraw && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-rose-500 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg">
+        <div className="absolute bottom-4 left-1/2 z-20 max-md:bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] -translate-x-1/2 rounded-full bg-rose-500 px-4 py-2 text-xs font-bold text-white shadow-lg">
           Zeichnen deaktiviert
         </div>
       )}
@@ -992,6 +1290,7 @@ function ToolButton({
   onClick,
   icon,
   large,
+  dock,
   title,
   'aria-label': ariaLabel,
   disabled = false,
@@ -1000,10 +1299,13 @@ function ToolButton({
   onClick: () => void;
   icon: React.ReactNode;
   large?: boolean;
+  /** Mobil-Dock: immer große Touch-Ziele */
+  dock?: boolean;
   title?: string;
   'aria-label'?: string;
   disabled?: boolean;
 }) {
+  const touchMin = dock ? 'min-h-12 min-w-12' : 'max-md:min-h-[44px] max-md:min-w-[44px] md:min-h-0 md:min-w-0';
   return (
     <button
       type="button"
@@ -1011,7 +1313,9 @@ function ToolButton({
       aria-label={ariaLabel ?? title}
       disabled={disabled}
       onClick={onClick}
-      className={`${large ? 'p-4' : 'p-2.5'} rounded-xl transition-all ${
+      className={`inline-flex shrink-0 items-center justify-center rounded-xl transition-all ${touchMin} ${
+        large ? 'p-4' : dock ? 'p-2.5' : 'p-2.5'
+      } ${
         disabled ? 'cursor-not-allowed opacity-40 text-slate-400' : active ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'text-slate-500 hover:bg-slate-100'
       }`}
     >
@@ -1020,15 +1324,27 @@ function ToolButton({
   );
 }
 
-function ColorButton({ color, active, onClick }: { color: string; active: boolean; onClick: () => void }) {
+function ColorButton({
+  color,
+  active,
+  onClick,
+  label,
+}: {
+  color: string;
+  active: boolean;
+  onClick: () => void;
+  /** Kurzname für Barrierefreiheit (z. B. „Blau“) */
+  label?: string;
+}) {
+  const aria = label ? `Farbe ${label}` : `Farbe ${color}`;
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-8 h-8 rounded-full border-2 transition-all ${active ? 'border-slate-900 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`}
+      className={`h-10 w-10 shrink-0 rounded-full border-2 transition-all max-md:min-h-[44px] max-md:min-w-[44px] md:h-8 md:w-8 ${active ? 'border-slate-900 scale-110 shadow-md' : 'border-transparent hover:scale-105'}`}
       style={{ backgroundColor: color }}
-      title={`Farbe ${color}`}
-      aria-label={`Farbe ${color}`}
+      title={aria}
+      aria-label={aria}
     />
   );
 }
