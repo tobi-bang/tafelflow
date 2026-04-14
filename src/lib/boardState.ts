@@ -95,13 +95,18 @@ export function readPathPoints(data: unknown): { x: number; y: number }[] {
 
 export function getObjectPageId(obj: BoardObject): string {
   if (obj.type === 'module') {
-    const raw = obj.data as Record<string, unknown>;
+    const raw = obj.data as Record<string, unknown> | undefined;
+    if (!raw || typeof raw !== 'object') return 'default';
     const inner = raw.data as Record<string, unknown> | undefined;
-    return String(inner?.pageId ?? 'default');
+    if (inner && typeof inner === 'object' && inner.pageId != null) return String(inner.pageId);
+    if (raw.pageId != null) return String(raw.pageId);
+    return 'default';
   }
   if (obj.type === 'path') {
-    const d = obj.data as Record<string, unknown>;
-    return String(d?.pageId ?? 'default');
+    const d = obj.data;
+    if (Array.isArray(d)) return 'default';
+    const rec = d as Record<string, unknown>;
+    return String(rec?.pageId ?? 'default');
   }
   return 'default';
 }

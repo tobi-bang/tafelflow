@@ -52,6 +52,19 @@ function minDistSqToPolyline(points: { x: number; y: number }[], px: number, py:
   return min;
 }
 
+/** Nächster freier Standardtitel „Seite n“ (ohne Platzhalter-ID `default`; vermeidet doppelte Nummern). */
+function nextDefaultPageTitle(existing: { id: string; title: string }[]): string {
+  const realPages = existing.filter((p) => p.id !== 'default');
+  let maxN = 0;
+  const re = /^Seite\s+(\d+)$/i;
+  for (const p of realPages) {
+    const m = String(p.title ?? '').trim().match(re);
+    if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+  }
+  if (maxN === 0) return `Seite ${realPages.length + 1}`;
+  return `Seite ${maxN + 1}`;
+}
+
 interface BoardProps {
   sessionId: string;
   isTeacher: boolean;
@@ -91,6 +104,7 @@ export default function Board({
   const pageStripRef = useRef<HTMLDivElement>(null);
   const activePageTabRef = useRef<HTMLButtonElement>(null);
   const persistTimerRef = useRef<Record<string, number>>({});
+  const [isCreatingPage, setIsCreatingPage] = useState(false);
 
   const canDraw = isTeacher || permissions.drawBoard;
   const boardRole: BoardRole = isTeacher ? 'teacher' : 'student';
@@ -99,6 +113,23 @@ export default function Board({
   const pages = snapshot.pages;
   const modules = snapshot.modules;
   const paths = snapshot.paths;
+  const activePageIdx = pages.findIndex((p) => p.id === activePageId);
+  const displayPageNum = activePageIdx >= 0 ? activePageIdx + 1 : 1;
+
+  const goToPreviousPage = () => {
+    if (activePageIdx <= 0) return;
+    const dest = pages[activePageIdx - 1];
+    setActivePageId(dest.id);
+    if (canManageModules) void publishActivePage(dest.id);
+  };
+
+  const goToNextPage = () => {
+    if (activePageIdx < 0 || activePageIdx >= pages.length - 1) return;
+    const dest = pages[activePageIdx + 1];
+    setActivePageId(dest.id);
+    if (canManageModules) void publishActivePage(dest.id);
+  };
+
   useEffect(() => {
     const load = async () => {
       const { data, error } = await supabase
@@ -367,8 +398,25 @@ export default function Board({
         return getObjectPageId(o) === activePageId;
       })
       .map((o) => o.id);
-    for (const id of ids) {
-      await supabase.from('board_objects').delete().eq('id', id);
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const prevSnapshot = objects;
+    Object.keys(persistTimerRef.current).forEach((id) => {
+      if (idSet.has(id) && persistTimerRef.current[id]) {
+        window.clearTimeout(persistTimerRef.current[id]);
+        delete persistTimerRef.current[id];
+      }
+    });
+    setObjects((list) => list.filter((o) => !idSet.has(o.id)));
+    setSelectedModuleId(null);
+    pathDraftRef.current = [];
+    setCurrentPath([]);
+    setIsDrawing(false);
+    const { error } = await supabase.from('board_objects').delete().in('id', ids);
+    if (error) {
+      console.error(error);
+      setObjects(prevSnapshot);
+      alert('Tafelinhalt konnte nicht gelöscht werden. Bitte erneut versuchen oder Seite neu laden.');
     }
   };
 
@@ -432,25 +480,31 @@ export default function Board({
   }, [selectModuleId, modules, onHandledSelectModuleId]);
 
   const createPage = async (title: string) => {
+    if (isCreatingPage) return;
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
-    const newId = crypto.randomUUID();
-    const order = pages.reduce((max, p) => Math.max(max, p.order), 0) + 1;
-    const { error } = await supabase.from('board_objects').insert({
-      session_id: sessionId,
-      type: 'board_page',
-      data: { id: newId, title, order },
-      color: '#0f172a',
-      author_id: user.id,
-    });
-    if (error) {
-      console.error(error);
-      return;
+    setIsCreatingPage(true);
+    try {
+      const newId = crypto.randomUUID();
+      const order = pages.reduce((max, p) => Math.max(max, p.order), 0) + 1;
+      const { error } = await supabase.from('board_objects').insert({
+        session_id: sessionId,
+        type: 'board_page',
+        data: { id: newId, title, order },
+        color: '#0f172a',
+        author_id: user.id,
+      });
+      if (error) {
+        console.error(error);
+        return;
+      }
+      setActivePageId(newId);
+      await publishActivePage(newId);
+    } finally {
+      setIsCreatingPage(false);
     }
-    setActivePageId(newId);
-    await publishActivePage(newId);
   };
 
   const renamePage = async (pageId: string) => {
@@ -630,19 +684,27 @@ export default function Board({
       <div className="pointer-events-auto absolute top-20 left-1/2 z-30 flex max-w-[96vw] -translate-x-1/2 items-center gap-1 rounded-2xl border border-slate-200 bg-white/95 py-2 pl-2 pr-3 shadow-md">
         <button
           type="button"
-          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
-          aria-label="Seitenleiste nach links scrollen"
-          onClick={() => pageStripRef.current?.scrollBy({ left: -220, behavior: 'smooth' })}
+          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Vorherige Seite"
+          disabled={pages.length < 2 || activePageIdx <= 0}
+          onClick={goToPreviousPage}
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
         <div
+          className="min-w-[2.75rem] shrink-0 text-center text-xs font-bold tabular-nums text-slate-600"
+          aria-live="polite"
+          title="Aktuelle Seite (Position / Gesamt)"
+        >
+          {pages.length > 0 ? `${displayPageNum}/${pages.length}` : '–'}
+        </div>
+        <div
           ref={pageStripRef}
           role="tablist"
           aria-label="Tafelseiten"
-          className="flex max-w-[min(72vw,42rem)] items-center gap-1 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:thin]"
+          className="flex max-w-[min(60vw,36rem)] min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-smooth py-0.5 [scrollbar-width:thin]"
         >
-          {pages.map((p) => {
+          {pages.map((p, tabIndex) => {
             const isActive = p.id === activePageId;
             return (
               <button
@@ -652,6 +714,7 @@ export default function Board({
                 role="tab"
                 aria-selected={isActive ? 'true' : 'false'}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={`${p.title} (${tabIndex + 1} von ${pages.length})`}
                 onClick={() => {
                   setActivePageId(p.id);
                   if (canManageModules) void publishActivePage(p.id);
@@ -669,9 +732,10 @@ export default function Board({
         </div>
         <button
           type="button"
-          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100"
-          aria-label="Seitenleiste nach rechts scrollen"
-          onClick={() => pageStripRef.current?.scrollBy({ left: 220, behavior: 'smooth' })}
+          className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Nächste Seite"
+          disabled={pages.length < 2 || activePageIdx < 0 || activePageIdx >= pages.length - 1}
+          onClick={goToNextPage}
         >
           <ChevronRight className="h-5 w-5" />
         </button>
@@ -679,8 +743,9 @@ export default function Board({
           <div className="ml-1 flex shrink-0 flex-wrap items-center gap-1 border-l border-slate-200 pl-2">
             <button
               type="button"
-              onClick={() => void createPage(`Seite ${pages.length + 1}`)}
-              className="rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200"
+              disabled={isCreatingPage}
+              onClick={() => void createPage(nextDefaultPageTitle(pages))}
+              className="rounded-lg bg-emerald-100 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-200 disabled:opacity-50"
             >
               + Seite
             </button>
