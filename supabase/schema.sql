@@ -30,6 +30,8 @@ create table if not exists public.sessions (
     "submitWord": true,
     "livePoll": true,
     "peerFeedback": true,
+    "pictureload": true,
+    "pictureloadModeration": false,
     "ideasRequireDisplayName": true,
     "ideasDefaultScale": 1.35
   }'::jsonb,
@@ -112,6 +114,21 @@ create table if not exists public.words (
 
 create index if not exists idx_words_session on public.words(session_id);
 
+create table if not exists public.pictureload_images (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  storage_path text not null,
+  author_id uuid not null,
+  author_display_name text,
+  content_type text not null default 'image/jpeg',
+  moderation_status text not null default 'approved' check (moderation_status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now(),
+  unique (session_id, storage_path)
+);
+
+create index if not exists idx_pictureload_session on public.pictureload_images(session_id);
+create index if not exists idx_pictureload_created on public.pictureload_images(session_id, created_at desc);
+
 -- ---------------------------------------------------------------------------
 -- Hilfsfunktionen (SECURITY DEFINER für konsistente Prüfung)
 -- ---------------------------------------------------------------------------
@@ -141,6 +158,41 @@ as $$
     where m.session_id = p_session_id and m.user_id = p_user_id and m.role = 'teacher'
   );
 $$;
+
+create or replace function public.pictureload_images_set_default_moderation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  need_mod boolean := false;
+  is_t boolean := false;
+begin
+  select coalesce((s.permissions->>'pictureloadModeration')::boolean, false)
+    into need_mod
+  from public.sessions s
+  where s.id = new.session_id;
+
+  select public.is_session_teacher(new.session_id, new.author_id) into is_t;
+
+  if is_t then
+    new.moderation_status := 'approved';
+  elsif need_mod then
+    new.moderation_status := 'pending';
+  else
+    new.moderation_status := 'approved';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_pictureload_moderation_bi on public.pictureload_images;
+create trigger trg_pictureload_moderation_bi
+  before insert on public.pictureload_images
+  for each row
+  execute function public.pictureload_images_set_default_moderation();
 
 -- ---------------------------------------------------------------------------
 -- RPCs
@@ -202,7 +254,7 @@ begin
     trim(p_name),
     'active',
     false,
-    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
+    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"pictureload":true,"pictureloadModeration":false,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
   )
   returning id into new_id;
 
@@ -387,7 +439,7 @@ create trigger on_auth_user_created
 -- Realtime: Unter Database → Replication in Supabase die Tabellen aktivieren
 -- oder einzeln (bei Fehler „already member“ ignorieren):
 --   alter publication supabase_realtime add table public.sessions;
---   ... board_objects, stickies, polls, poll_responses, words
+--   ... board_objects, stickies, polls, poll_responses, words, pictureload_images
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
@@ -402,6 +454,7 @@ alter table public.stickies enable row level security;
 alter table public.polls enable row level security;
 alter table public.poll_responses enable row level security;
 alter table public.words enable row level security;
+alter table public.pictureload_images enable row level security;
 
 -- sessions
 create policy "sessions_select_member"
@@ -591,6 +644,95 @@ create policy "words_insert_rules"
 create policy "words_delete_teacher"
   on public.words for delete
   using (public.is_session_teacher(session_id, auth.uid()));
+
+-- pictureload_images
+create policy "pictureload_select_rules"
+  on public.pictureload_images for select
+  to authenticated
+  using (
+    public.is_session_member(session_id, auth.uid())
+    and (
+      public.is_session_teacher(session_id, auth.uid())
+      or moderation_status = 'approved'
+    )
+  );
+
+create policy "pictureload_insert_rules"
+  on public.pictureload_images for insert
+  with check (
+    public.is_session_member(session_id, auth.uid())
+    and author_id = auth.uid()
+    and (
+      public.is_session_teacher(session_id, auth.uid())
+      or exists (
+        select 1 from public.sessions s
+        where s.id = session_id
+          and s.status = 'active'
+          and coalesce((s.permissions->>'pictureload')::boolean, true) = true
+      )
+    )
+  );
+
+create policy "pictureload_delete_teacher"
+  on public.pictureload_images for delete
+  using (public.is_session_teacher(session_id, auth.uid()));
+
+create policy "pictureload_update_teacher"
+  on public.pictureload_images for update
+  to authenticated
+  using (public.is_session_teacher(session_id, auth.uid()))
+  with check (public.is_session_teacher(session_id, auth.uid()));
+
+-- Pictureload: Storage-Bucket (öffentliche URLs für Galerie)
+insert into storage.buckets (id, name, public)
+values ('pictureload', 'pictureload', true)
+on conflict (id) do update set public = excluded.public;
+
+create policy "pictureload_storage_select"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'pictureload'
+    and (
+      public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+      or exists (
+        select 1 from public.pictureload_images i
+        where i.storage_path = name
+          and i.moderation_status = 'approved'
+          and public.is_session_member(i.session_id, auth.uid())
+      )
+    )
+  );
+
+create policy "pictureload_storage_insert"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'pictureload'
+    and split_part(name, '/', 1) <> ''
+    and exists (
+      select 1 from public.session_members m
+      where m.user_id = auth.uid()
+        and m.session_id::text = split_part(name, '/', 1)
+    )
+    and (
+      public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+      or exists (
+        select 1 from public.sessions s
+        where s.id::text = split_part(name, '/', 1)
+          and s.status = 'active'
+          and coalesce((s.permissions->>'pictureload')::boolean, true) = true
+      )
+    )
+  );
+
+create policy "pictureload_storage_delete"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'pictureload'
+    and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+  );
 
 -- RPCs für authentifizierte User aufrufbar
 grant usage on schema public to authenticated;

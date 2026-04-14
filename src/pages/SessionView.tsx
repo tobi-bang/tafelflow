@@ -12,6 +12,7 @@ import {
   Download,
   FileText,
   ImageDown,
+  Images,
   LayoutGrid,
   Loader2,
   Lock,
@@ -40,6 +41,7 @@ import Polls from '../components/Polls';
 import WordCloud from '../components/WordCloud';
 import LivePoll from '../components/LivePoll';
 import PeerFeedback from '../components/PeerFeedback';
+import Pictureload from '../components/Pictureload';
 import SessionToolShell from '../components/session/SessionToolShell';
 import BoardTimerModal from '../components/session/BoardTimerModal';
 import type { SessionTabId } from '../lib/sessionToolMeta';
@@ -89,6 +91,7 @@ function visibleTabsForStudent(p: SessionPermissions): Tab[] {
   if (p.submitWord) tabs.push('wordcloud');
   if (p.livePoll) tabs.push('livepoll');
   if (p.peerFeedback) tabs.push('peerfeedback');
+  if (p.pictureload) tabs.push('pictureload');
   return tabs;
 }
 
@@ -99,6 +102,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   wordcloud: <Cloud className="w-6 h-6" />,
   livepoll: <Vote className="w-6 h-6" />,
   peerfeedback: <UsersRound className="w-6 h-6" />,
+  pictureload: <Images className="w-6 h-6" />,
 };
 
 export default function SessionView() {
@@ -663,6 +667,24 @@ export default function SessionView() {
                 </SessionToolShell>
               </motion.div>
             )}
+            {activeTab === 'pictureload' && participantTabs.includes('pictureload') && (
+              <motion.div
+                key="pictureload"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell tabId="pictureload" role={sessionRole} presentationMode={session.presentationMode} variant="page">
+                  <Pictureload
+                    sessionId={session.id}
+                    isTeacher={effectiveIsTeacher}
+                    permissions={session.permissions}
+                    presentationMode={session.presentationMode}
+                  />
+                </SessionToolShell>
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
       </div>
@@ -893,6 +915,16 @@ export default function SessionView() {
                 <PermissionToggle label="Wörter einsenden" active={session.permissions.submitWord} onClick={() => togglePermission('submitWord')} />
                 <PermissionToggle label="Live-Abstimmung" active={session.permissions.livePoll} onClick={() => togglePermission('livePoll')} />
                 <PermissionToggle label="Peer-Feedback" active={session.permissions.peerFeedback} onClick={() => togglePermission('peerFeedback')} />
+                <PermissionToggle
+                  label="Pictureload (Bilder hochladen)"
+                  active={session.permissions.pictureload}
+                  onClick={() => togglePermission('pictureload')}
+                />
+                <PermissionToggle
+                  label="Pictureload: Freigabe durch Lehrkraft (Bilder erst nach OK sichtbar)"
+                  active={session.permissions.pictureloadModeration}
+                  onClick={() => togglePermission('pictureloadModeration')}
+                />
               </div>
             </section>
           </div>

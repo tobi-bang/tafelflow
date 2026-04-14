@@ -7,6 +7,7 @@ import type {
   Poll,
   PollResponse,
   WordEntry,
+  PictureloadImage,
 } from '../types';
 
 export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
@@ -21,6 +22,8 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     submitWord: p.submitWord !== false,
     livePoll: p.livePoll !== false,
     peerFeedback: p.peerFeedback !== false,
+    pictureload: p.pictureload !== false,
+    pictureloadModeration: p.pictureloadModeration === true,
     ideasRequireDisplayName: p.ideasRequireDisplayName !== false,
     ideasDefaultScale: (() => {
       const v = p.ideasDefaultScale;
@@ -117,5 +120,23 @@ export function rowToWord(row: Record<string, unknown>): WordEntry {
     word: String(row.word ?? ''),
     authorId: String(row.author_id ?? ''),
     createdAt: String(row.created_at ?? ''),
+  };
+}
+
+function parsePictureloadModerationStatus(v: unknown): PictureloadImage['moderationStatus'] {
+  if (v === 'pending' || v === 'approved' || v === 'rejected') return v;
+  return 'approved';
+}
+
+export function rowToPictureloadImage(row: Record<string, unknown>): PictureloadImage {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id ?? ''),
+    storagePath: String(row.storage_path ?? ''),
+    authorId: String(row.author_id ?? ''),
+    authorDisplayName: row.author_display_name != null ? String(row.author_display_name) : null,
+    contentType: String(row.content_type ?? 'image/jpeg'),
+    createdAt: String(row.created_at ?? ''),
+    moderationStatus: parsePictureloadModerationStatus(row.moderation_status),
   };
 }

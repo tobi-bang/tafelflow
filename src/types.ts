@@ -13,6 +13,10 @@ export interface SessionPermissions {
   livePoll: boolean;
   /** Peer-Feedback */
   peerFeedback: boolean;
+  /** Pictureload: Bilder hochladen (Bilderwand) */
+  pictureload: boolean;
+  /** Pictureload: SuS-Uploads erst nach Lehrkraft-Freigabe für alle sichtbar (Moderation). */
+  pictureloadModeration: boolean;
   /**
    * Wenn true: SuS geben bei Beitritt einen Anzeigenamen an (sichtbar bei Ideen).
    * Wenn false: Name optional; Ideen ohne Namenszeile übersichtlicher.
@@ -115,6 +119,20 @@ export interface WordEntry {
   word: string;
   authorId: string;
   createdAt: string;
+}
+
+export type PictureloadModerationStatus = 'pending' | 'approved' | 'rejected';
+
+/** Eintrag in der Pictureload-Bilderwand (Datei liegt in Supabase Storage). */
+export interface PictureloadImage {
+  id: string;
+  sessionId: string;
+  storagePath: string;
+  authorId: string;
+  authorDisplayName: string | null;
+  contentType: string;
+  createdAt: string;
+  moderationStatus: PictureloadModerationStatus;
 }
 
 /** Minimaler App-Nutzer (Supabase Auth, meist anonym) */

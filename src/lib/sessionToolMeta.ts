@@ -7,7 +7,8 @@ export type SessionTabId =
   | 'polls'
   | 'wordcloud'
   | 'livepoll'
-  | 'peerfeedback';
+  | 'peerfeedback'
+  | 'pictureload';
 
 export const SESSION_TAB_ORDER: SessionTabId[] = [
   'board',
@@ -16,6 +17,7 @@ export const SESSION_TAB_ORDER: SessionTabId[] = [
   'wordcloud',
   'livepoll',
   'peerfeedback',
+  'pictureload',
 ];
 
 export type SessionToolMeta = {
@@ -62,5 +64,11 @@ export const SESSION_TOOL_META: Record<SessionTabId, SessionToolMeta> = {
     title: 'Peer-Feedback',
     descriptionTeacher: 'Kriterien festlegen und Rückmeldungen der Gruppe auswerten.',
     descriptionStudent: 'Bewerte die Kriterien und optional mit einem kurzen Kommentar.',
+  },
+  pictureload: {
+    navLabel: 'Pictures',
+    title: 'Pictureload',
+    descriptionTeacher: 'Bilderwand der SuS verwalten – Uploads prüfen und bei Bedarf löschen.',
+    descriptionStudent: 'Lade Fotos hoch und sieh die gemeinsame Bilderwand der Klasse.',
   },
 };
