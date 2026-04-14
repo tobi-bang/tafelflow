@@ -2,7 +2,6 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GraduationCap, Users, Presentation, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
-import AppShareQrPanel from '../components/AppShareQrPanel';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -21,7 +20,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 text-center sm:px-6 sm:pb-24 sm:pt-10">
+      <main className="mx-auto max-w-7xl px-4 pb-10 pt-6 text-center sm:px-6 sm:pb-16 sm:pt-10">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
           <h2 className="mb-4 text-balance text-3xl font-extrabold leading-tight text-slate-900 sm:mb-6 sm:text-4xl md:text-5xl lg:text-6xl">
             Starte jetzt <span className="text-blue-600">den richtigen Zugang</span>.
@@ -76,11 +75,8 @@ export default function Home() {
         </motion.div>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white py-8 sm:py-12">
+      <footer className="border-t border-slate-200/80 bg-white/90 py-6 sm:py-8">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mx-auto mb-8 max-w-2xl sm:mb-10">
-            <AppShareQrPanel defaultPath="/join" />
-          </div>
           <p className="text-center text-sm text-slate-500 sm:text-base">© 2026 TafelFlow. TobCreator</p>
         </div>
       </footer>

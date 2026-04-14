@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToPictureloadImage } from '../lib/dbMap';
 import type { PictureloadImage, PictureloadModerationStatus, SessionPermissions } from '../types';
@@ -18,17 +18,37 @@ import {
 
 const BUCKET = 'pictureload';
 const MAX_BYTES = 6 * 1024 * 1024;
-const ACCEPT = 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp';
+/** Breit genug für iOS Fotos-App; Validierung bleibt in extFromMime/uploadSingleFile. */
+const ACCEPT =
+  'image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif';
 
 type TeacherGridFilter = 'all' | 'approved' | 'pending' | 'rejected';
 
 type UploadFileError = { fileName: string; message: string };
 
-function extFromMime(mime: string): string | null {
-  if (mime === 'image/jpeg' || mime === 'image/jpg') return '.jpg';
-  if (mime === 'image/png') return '.png';
-  if (mime === 'image/webp') return '.webp';
+function extFromMime(mime: string, fileName = ''): string | null {
+  const m = (mime || '').toLowerCase().trim();
+  const fn = fileName.toLowerCase();
+  if (m === 'image/jpeg' || m === 'image/jpg') return '.jpg';
+  if (m === 'image/png') return '.png';
+  if (m === 'image/webp') return '.webp';
+  if (m === 'image/heic' || m === 'image/heif') return '.heic';
+  if (!m || m === 'application/octet-stream') {
+    if (fn.endsWith('.heic')) return '.heic';
+    if (fn.endsWith('.heif')) return '.heif';
+    if (fn.endsWith('.jpg') || fn.endsWith('.jpeg')) return '.jpg';
+    if (fn.endsWith('.png')) return '.png';
+    if (fn.endsWith('.webp')) return '.webp';
+  }
   return null;
+}
+
+function storageContentType(file: File, ext: string): string {
+  if (file.type && file.type !== 'application/octet-stream') return file.type;
+  if (ext === '.heic' || ext === '.heif') return 'image/heic';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
 }
 
 function publicUrlForPath(path: string): string {
@@ -72,9 +92,12 @@ async function uploadSingleFile(
   displayName: string | null,
   file: File
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const ext = extFromMime(file.type);
+  const ext = extFromMime(file.type, file.name);
   if (!ext) {
-    return { ok: false, message: 'Ungültiger Dateityp (nur JPG, PNG, WEBP).' };
+    return {
+      ok: false,
+      message: 'Ungültiger Dateityp (z. B. JPG, PNG, WEBP oder iPhone HEIC).',
+    };
   }
   if (file.size > MAX_BYTES) {
     return { ok: false, message: `Zu groß (max. ${Math.round(MAX_BYTES / (1024 * 1024))} MB).` };
@@ -82,11 +105,12 @@ async function uploadSingleFile(
 
   const fileId = crypto.randomUUID();
   const path = `${sessionId}/${fileId}${ext}`;
+  const ct = storageContentType(file, ext);
 
   const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
     cacheControl: '3600',
     upsert: false,
-    contentType: file.type,
+    contentType: ct,
   });
   if (upErr) {
     return { ok: false, message: upErr.message || 'Upload fehlgeschlagen.' };
@@ -97,7 +121,7 @@ async function uploadSingleFile(
     storage_path: path,
     author_id: userId,
     author_display_name: displayName,
-    content_type: file.type,
+    content_type: ct,
   });
   if (insErr) {
     await supabase.storage.from(BUCKET).remove([path]);
@@ -123,7 +147,6 @@ export default function Pictureload({
   const [teacherFilter, setTeacherFilter] = useState<TeacherGridFilter>('all');
   const [teacherStudentPreview, setTeacherStudentPreview] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const canUpload = isTeacher || permissions.pictureload;
   const moderationOn = permissions.pictureloadModeration === true;
@@ -239,12 +262,6 @@ export default function Pictureload({
     [images]
   );
 
-  const pickFile = () => {
-    setUploadError(null);
-    setUploadFileErrors([]);
-    fileRef.current?.click();
-  };
-
   const setModerationStatus = async (img: PictureloadImage, status: PictureloadModerationStatus) => {
     if (!isTeacher) return;
     const { error } = await supabase
@@ -260,6 +277,8 @@ export default function Pictureload({
   };
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
+    setUploadFileErrors([]);
     const list = e.target.files;
     e.target.value = '';
     if (!list?.length || !canUpload || uploading) return;
@@ -410,7 +429,7 @@ export default function Pictureload({
       return 'Lade Fotos hoch (einzeln oder mehrere gleichzeitig). Die Lehrkraft entscheidet, ob sie auf der Wand erscheinen.';
     }
     if (canUpload) {
-      return 'Wähle eine oder mehrere Dateien (JPG, PNG oder WEBP, je max. 6 MB). Mehrfachauswahl: Desktop mit Umschalttaste oder Aufziehen; Smartphone über „Auswählen“.';
+      return 'Tippe auf „Fotos hochladen“ und wähle aus der Mediathek oder Kamera (iPhone: u. a. JPG/PNG/HEIC, je max. 6 MB). Mehrere Bilder auf einmal sind möglich.';
     }
     return '';
   })();
@@ -420,19 +439,6 @@ export default function Pictureload({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
-      <label htmlFor="pictureload-file" className="sr-only">
-        Bilddateien zum Hochladen (JPG, PNG oder WEBP), Mehrfachauswahl möglich
-      </label>
-      <input
-        id="pictureload-file"
-        ref={fileRef}
-        type="file"
-        accept={ACCEPT}
-        multiple
-        className="sr-only"
-        onChange={onFileChange}
-      />
-
       <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -487,34 +493,44 @@ export default function Pictureload({
               )}
             </div>
             {canUpload && (
-              <button
-                type="button"
-                onClick={pickFile}
-                disabled={uploading || bulkBusy}
-                className="inline-flex min-h-[48px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-[200px]"
+              <label
+                className={`relative inline-flex min-h-[52px] min-w-[12rem] shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition-[transform,opacity,background-color] hover:bg-blue-700 active:scale-[0.98] sm:min-w-[200px] ${
+                  uploading || bulkBusy ? 'pointer-events-none opacity-60' : ''
+                } has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-white has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-blue-600`}
+                aria-label="Fotos aus Mediathek oder Kamera auswählen und hochladen"
               >
-                {uploading ? (
-                  <>
-                    <span className="inline-flex items-center gap-2">
-                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                      Upload läuft …
-                    </span>
-                    {uploadProgress && (
-                      <span className="text-xs font-semibold text-blue-100">
-                        {uploadProgress.current} von {uploadProgress.total} Dateien
+                <input
+                  type="file"
+                  accept={ACCEPT}
+                  multiple
+                  disabled={uploading || bulkBusy}
+                  className="absolute inset-0 z-20 h-full min-h-[52px] w-full cursor-pointer text-[16px] leading-none opacity-0 disabled:cursor-not-allowed"
+                  onChange={onFileChange}
+                />
+                <span className="pointer-events-none relative z-10 flex flex-col items-center gap-0.5">
+                  {uploading ? (
+                    <>
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                        Upload läuft …
                       </span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <span className="inline-flex items-center gap-2">
-                      <ImagePlus className="h-5 w-5" aria-hidden />
-                      Fotos hochladen
-                    </span>
-                    <span className="text-[11px] font-semibold text-blue-100">Mehrfachauswahl möglich</span>
-                  </>
-                )}
-              </button>
+                      {uploadProgress && (
+                        <span className="text-xs font-semibold text-blue-100">
+                          {uploadProgress.current} von {uploadProgress.total} Dateien
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-2">
+                        <ImagePlus className="h-5 w-5" aria-hidden />
+                        Fotos hochladen
+                      </span>
+                      <span className="text-[11px] font-semibold text-blue-100">Mehrfachauswahl möglich</span>
+                    </>
+                  )}
+                </span>
+              </label>
             )}
           </div>
 

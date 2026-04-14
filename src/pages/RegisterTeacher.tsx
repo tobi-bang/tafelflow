@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Presentation, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
-import AppShareQrPanel from '../components/AppShareQrPanel';
 
 function getAuthRedirectUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -52,7 +51,7 @@ export default function RegisterTeacher() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full max-w-full flex-col items-center gap-6 overflow-x-hidden bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-6 sm:min-h-screen sm:justify-center sm:gap-8 sm:p-6 sm:py-10">
+    <div className="flex min-h-dvh w-full max-w-full flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-slate-50 to-blue-50 px-4 py-6 sm:min-h-screen sm:p-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -129,9 +128,6 @@ export default function RegisterTeacher() {
           </button>
         </div>
       </motion.div>
-      <div className="w-full max-w-md shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <AppShareQrPanel variant="compact" defaultPath="/join" />
-      </div>
     </div>
   );
 }

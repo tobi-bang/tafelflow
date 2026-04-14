@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Maximize2, Minimize2, Timer, X } from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Play, Timer, X } from 'lucide-react';
 
 type TimerKind = 'countdown' | 'stopwatch';
 
@@ -478,7 +478,29 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
           aria-label="Große Zeitanzeige"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex shrink-0 justify-end">
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {run === 'running' && (
+              <button
+                type="button"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-amber-500/25 text-amber-100 hover:bg-amber-500/40"
+                aria-label="Pause"
+                title="Zeit anhalten"
+                onClick={handlePause}
+              >
+                <Pause className="h-5 w-5 shrink-0" aria-hidden />
+              </button>
+            )}
+            {run === 'paused' && (
+              <button
+                type="button"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full bg-emerald-500/25 text-emerald-100 hover:bg-emerald-500/40"
+                aria-label="Fortsetzen"
+                title="Weiterlaufen lassen"
+                onClick={handleResume}
+              >
+                <Play className="h-5 w-5 shrink-0 pl-0.5" aria-hidden />
+              </button>
+            )}
             <button
               type="button"
               className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"

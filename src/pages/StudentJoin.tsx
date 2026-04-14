@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, ensureAnonymousSession } from '../lib/supabase';
 import { Presentation, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
-import AppShareQrPanel from '../components/AppShareQrPanel';
 
 type JoinPreviewRow = {
   session_id?: string;
@@ -167,7 +166,7 @@ export default function StudentJoin() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full max-w-full flex-col items-center gap-6 overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50 px-4 py-6 sm:min-h-screen sm:justify-center sm:px-6 sm:py-10">
+    <div className="flex min-h-dvh w-full max-w-full flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50 px-4 py-6 sm:min-h-screen sm:px-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -272,9 +271,6 @@ export default function StudentJoin() {
           </button>
         </div>
       </motion.div>
-      <div className="w-full max-w-md shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <AppShareQrPanel variant="compact" defaultPath="/join" />
-      </div>
     </div>
   );
 }
