@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { SessionTabId } from './sessionToolMeta';
 import type { BoardModule } from '../types';
+import { DEFAULT_TEXT_MODULE_FONT_PX, resolveTextModuleFontPx } from './boardTextModule';
 
 export interface ModuleRegistryEntry {
   type: string;
@@ -18,11 +19,15 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     title: 'Notizmodul',
     addLabel: 'Textmodul',
     defaultSize: { width: 360, height: 220 },
-    defaultData: { text: '' },
+    defaultData: { text: '', textFontSizePx: DEFAULT_TEXT_MODULE_FONT_PX },
     render: ({ module }) => {
       const text = String(module.data.text ?? '');
+      const fontPx = resolveTextModuleFontPx(module.data.textFontSizePx);
       return (
-        <div className="h-full overflow-auto whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
+        <div
+          style={{ fontSize: `${fontPx}px` }}
+          className="h-full overflow-auto whitespace-pre-wrap text-slate-700 leading-relaxed"
+        >
           {text || 'Leere Notiz'}
         </div>
       );

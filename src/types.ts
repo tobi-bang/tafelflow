@@ -66,6 +66,8 @@ export interface BoardModuleData {
   zIndex?: number;
   title?: string;
   text?: string;
+  /** Schriftgröße im Textmodul (px), z. B. 18–32 für Tafel / Beamer. */
+  textFontSizePx?: number;
   /** Lehrkraft-Freigabe: SuS dürfen Inhalt bearbeiten (bei freigegebenen Modulen). */
   editableByStudents?: boolean;
   [key: string]: unknown;

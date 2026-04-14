@@ -14,6 +14,11 @@ import {
   getObjectPageId,
   readBoardModuleFromObject,
 } from '../lib/boardState';
+import {
+  TEXT_MODULE_FONT_STEPS,
+  resolveTextModuleFontPx,
+  stepTextModuleFontPx,
+} from '../lib/boardTextModule';
 
 export type ToolMode = 'select' | 'pen' | 'eraser' | 'pan';
 
@@ -897,14 +902,60 @@ function renderModuleContent(
     );
   }
   if (module.type === 'text') {
+    const fontPx = resolveTextModuleFontPx(module.data.textFontSizePx);
     return (
-      <textarea
-        value={String(module.data.text ?? '')}
-        onChange={(e) => onPatch({ data: { text: e.target.value } })}
-        placeholder="Notizen für die gemeinsame Tafel ..."
-        className="w-full h-full resize-none outline-none bg-transparent text-sm text-slate-700 leading-relaxed"
-        readOnly={!editable}
-      />
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        {editable && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 pb-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Schrift</span>
+            <div className="flex items-center rounded-lg border border-slate-200 bg-white shadow-sm">
+              <button
+                type="button"
+                className="rounded-l-md px-2 py-1 text-lg font-semibold leading-none text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Schrift kleiner"
+                disabled={fontPx <= TEXT_MODULE_FONT_STEPS[0]}
+                onClick={() =>
+                  onPatch({ data: { textFontSizePx: stepTextModuleFontPx(module.data.textFontSizePx, -1) } })
+                }
+              >
+                −
+              </button>
+              <select
+                value={fontPx}
+                onChange={(e) => onPatch({ data: { textFontSizePx: Number(e.target.value) } })}
+                className="max-h-8 border-0 border-x border-slate-200 bg-slate-50/80 py-1 text-center text-xs font-semibold text-slate-800 focus:ring-0"
+                aria-label="Schriftgröße"
+                title="Schriftgröße"
+              >
+                {TEXT_MODULE_FONT_STEPS.map((px) => (
+                  <option key={px} value={px}>
+                    {px}px
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="rounded-r-md px-2 py-1 text-lg font-semibold leading-none text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                aria-label="Schrift größer"
+                disabled={fontPx >= TEXT_MODULE_FONT_STEPS[TEXT_MODULE_FONT_STEPS.length - 1]}
+                onClick={() =>
+                  onPatch({ data: { textFontSizePx: stepTextModuleFontPx(module.data.textFontSizePx, 1) } })
+                }
+              >
+                +
+              </button>
+            </div>
+          </div>
+        )}
+        <textarea
+          value={String(module.data.text ?? '')}
+          onChange={(e) => onPatch({ data: { text: e.target.value } })}
+          placeholder="Notizen für die gemeinsame Tafel ..."
+          style={{ fontSize: `${fontPx}px`, lineHeight: 1.45 }}
+          className="w-full min-h-0 flex-1 resize-none outline-none bg-transparent text-slate-700"
+          readOnly={!editable}
+        />
+      </div>
     );
   }
   return <>{definition.render({ module, onOpenTool })}</>;
