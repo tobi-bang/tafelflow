@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { PICTURELOAD_STORAGE_BUCKET } from '../lib/pictureloadStorage';
 import { rowToPictureloadImage } from '../lib/dbMap';
 import type { PictureloadImage, PictureloadModerationStatus, SessionPermissions } from '../types';
 import {
@@ -18,7 +19,6 @@ import {
   XCircle,
 } from 'lucide-react';
 
-const BUCKET = 'pictureload';
 const MAX_BYTES = 6 * 1024 * 1024;
 /** Breit genug für iOS Fotos-App; Validierung bleibt in extFromMime/uploadSingleFile. */
 const ACCEPT =
@@ -27,6 +27,20 @@ const ACCEPT =
 type TeacherGridFilter = 'all' | 'approved' | 'pending' | 'rejected';
 
 type UploadFileError = { fileName: string; message: string };
+
+/** Klare Meldung bei fehlendem Bucket vs. sonstigen Storage-Fehlern. */
+function formatPictureloadStorageError(message: string | undefined): string {
+  const raw = (message || '').trim();
+  if (!raw) return 'Speichern im Storage ist fehlgeschlagen.';
+  const low = raw.toLowerCase();
+  if (low.includes('bucket not found') || (low.includes('not found') && low.includes('bucket'))) {
+    return (
+      `Supabase Storage: Der Bucket „${PICTURELOAD_STORAGE_BUCKET}“ existiert nicht. ` +
+      'Lege im Dashboard unter „Storage“ einen öffentlichen Bucket mit genau diesem Namen an, oder wende die SQL-Migrationen an (z. B. `007_pictureload.sql` und `009_pictureload_ensure_storage_bucket.sql`).'
+    );
+  }
+  return raw;
+}
 
 function extFromMime(mime: string, fileName = ''): string | null {
   const m = (mime || '').toLowerCase().trim();
@@ -54,7 +68,7 @@ function storageContentType(file: File, ext: string): string {
 }
 
 function publicUrlForPath(path: string): string {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  const { data } = supabase.storage.from(PICTURELOAD_STORAGE_BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
@@ -109,13 +123,13 @@ async function uploadSingleFile(
   const path = `${sessionId}/${fileId}${ext}`;
   const ct = storageContentType(file, ext);
 
-  const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, {
+  const { error: upErr } = await supabase.storage.from(PICTURELOAD_STORAGE_BUCKET).upload(path, file, {
     cacheControl: '3600',
     upsert: false,
     contentType: ct,
   });
   if (upErr) {
-    return { ok: false, message: upErr.message || 'Upload fehlgeschlagen.' };
+    return { ok: false, message: formatPictureloadStorageError(upErr.message) };
   }
 
   const { error: insErr } = await supabase.from('pictureload_images').insert({
@@ -126,7 +140,7 @@ async function uploadSingleFile(
     content_type: ct,
   });
   if (insErr) {
-    await supabase.storage.from(BUCKET).remove([path]);
+    await supabase.storage.from(PICTURELOAD_STORAGE_BUCKET).remove([path]);
     return { ok: false, message: insErr.message || 'Metadaten speichern fehlgeschlagen.' };
   }
 
@@ -368,8 +382,12 @@ export default function Pictureload({
   const removeImage = async (img: PictureloadImage) => {
     if (!isTeacher) return;
     if (!confirm('Dieses Bild wirklich löschen?')) return;
-    const { error: stErr } = await supabase.storage.from(BUCKET).remove([img.storagePath]);
-    if (stErr) console.error(stErr);
+    const { error: stErr } = await supabase.storage.from(PICTURELOAD_STORAGE_BUCKET).remove([img.storagePath]);
+    if (stErr) {
+      console.error(stErr);
+      alert(formatPictureloadStorageError(stErr.message));
+      return;
+    }
     const { error: delErr } = await supabase.from('pictureload_images').delete().eq('id', img.id);
     if (delErr) {
       console.error(delErr);
@@ -411,7 +429,7 @@ export default function Pictureload({
     setBulkBusy(true);
     try {
       for (const img of targets) {
-        const { error: stErr } = await supabase.storage.from(BUCKET).remove([img.storagePath]);
+        const { error: stErr } = await supabase.storage.from(PICTURELOAD_STORAGE_BUCKET).remove([img.storagePath]);
         if (stErr) console.error(stErr);
         const { error: delErr } = await supabase.from('pictureload_images').delete().eq('id', img.id);
         if (delErr) console.error(delErr);
