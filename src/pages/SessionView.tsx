@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -625,7 +625,7 @@ export default function SessionView() {
       {showToolPicker && session && (
         <Modal onClose={() => setShowToolPicker(false)} title="Tool wählen">
           <p className="text-slate-600 text-sm mb-4">Tippe ein Werkzeug – ideal für Smartphones und Tablets.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[min(70vh,520px)] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {participantTabs.map((tab) => (
               <button
                 key={tab}
@@ -899,16 +899,45 @@ function NavIcon({
 }
 
 function Modal({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  const titleId = useId();
+
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">{title}</h2>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full" aria-label="Schließen">
-            <X className="w-5 h-5 text-slate-400" />
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden overscroll-behavior-contain bg-slate-900/50 p-4 backdrop-blur-sm sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.2 }}
+        className="my-auto flex min-h-0 w-full max-w-lg max-h-[min(92dvh,56rem)] flex-col rounded-3xl bg-white shadow-2xl"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 pb-3 pt-5 sm:px-8 sm:pt-6">
+          <h2 id={titleId} className="break-words pr-2 text-xl font-bold leading-tight text-slate-900 sm:text-2xl">
+            {title}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-full p-2 text-slate-500 hover:bg-slate-100"
+            aria-label="Schließen"
+          >
+            <X className="h-5 w-5" />
           </button>
+        </header>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain px-5 py-4 sm:px-8 sm:pb-6">
+          {children}
         </div>
-        {children}
       </motion.div>
     </div>
   );
