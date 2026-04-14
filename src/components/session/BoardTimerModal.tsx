@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { Timer, X } from 'lucide-react';
+import { Maximize2, Minimize2, Timer, X } from 'lucide-react';
 
 type TimerKind = 'countdown' | 'stopwatch';
 
@@ -117,6 +117,8 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
 
   const [tick, setTick] = useState(0);
   const rafRef = useRef<number | null>(null);
+  /** Nur große Zeitanzeige (Unterricht / Beamer), Steuerung im Modal bleibt erreichbar nach Zurück. */
+  const [focusView, setFocusView] = useState(false);
 
   const durationMs = (pickMin * 60 + pickSec) * 1000;
 
@@ -221,11 +223,21 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (focusView) {
+        e.preventDefault();
+        setFocusView(false);
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, focusView]);
+
+  useEffect(() => {
+    if (!open) setFocusView(false);
+  }, [open]);
 
   const handleStart = () => {
     if (kind === 'countdown') {
@@ -306,8 +318,8 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
       <button
         type="button"
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-        aria-label="Schließen"
-        onClick={onClose}
+        aria-label={focusView ? 'Zurück zur normalen Timer-Ansicht' : 'Schließen'}
+        onClick={() => (focusView ? setFocusView(false) : onClose())}
       />
       <div className="pointer-events-none absolute inset-0 flex items-end justify-center overflow-hidden overscroll-behavior-contain p-0 pb-[env(safe-area-inset-bottom)] sm:items-center sm:p-4 sm:pb-4">
         <motion.div
@@ -317,21 +329,33 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
           className="pointer-events-auto my-auto flex max-h-[min(92dvh,40rem)] w-full max-w-md flex-col rounded-t-3xl bg-white shadow-2xl sm:max-h-[min(88dvh,40rem)] sm:rounded-3xl"
           onClick={(e) => e.stopPropagation()}
         >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex items-center gap-2 min-w-0">
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:gap-3 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2">
             <Timer className="h-5 w-5 shrink-0 text-slate-600" aria-hidden />
             <h2 id={titleId} className="truncate text-lg font-bold text-slate-900 sm:text-xl">
               Timer &amp; Stoppuhr
             </h2>
           </div>
-          <button
-            type="button"
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-            aria-label="Schließen"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <button
+              type="button"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 sm:min-w-[auto] sm:gap-2 sm:px-3"
+              title="Zeit groß anzeigen"
+              aria-label="Zeit groß anzeigen"
+              onClick={() => setFocusView(true)}
+            >
+              <Maximize2 className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="hidden text-sm font-bold sm:inline">Groß</span>
+            </button>
+            <button
+              type="button"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+              aria-label="Schließen"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-y-contain px-4 py-4 sm:px-6 sm:py-5">
@@ -446,6 +470,57 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
         </div>
         </motion.div>
       </div>
+
+      {focusView && (
+        <div
+          className="pointer-events-auto absolute inset-0 z-[1] flex flex-col bg-zinc-950 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-8"
+          role="document"
+          aria-label="Große Zeitanzeige"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex shrink-0 justify-end">
+            <button
+              type="button"
+              className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+              aria-label="Klein anzeigen"
+              title="Zurück zur normalen Ansicht"
+              onClick={() => setFocusView(false)}
+            >
+              <Minimize2 className="h-6 w-6" aria-hidden />
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 text-center sm:gap-6">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500 sm:text-base">
+              {kind === 'countdown' ? 'Countdown' : 'Stoppuhr'}
+            </p>
+            <div
+              className={`w-full max-w-[95vw] rounded-3xl border border-white/10 bg-zinc-900/60 px-4 py-10 sm:px-10 sm:py-14 ${
+                urgentCountdown ? 'board-timer-urgent' : ''
+              } ${finishedCountdown ? 'board-timer-finished border-red-400/40 bg-red-950/50' : ''}`}
+              aria-live="polite"
+            >
+              <div
+                className={`font-mono text-[clamp(3.5rem,22vw,12rem)] font-bold leading-none tabular-nums tracking-tight sm:text-[clamp(4rem,18vw,14rem)] ${
+                  urgentCountdown || finishedCountdown ? '' : 'text-white'
+                }`}
+              >
+                {displayStr}
+              </div>
+              {finishedCountdown && (
+                <p className="mt-6 text-lg font-semibold text-red-300 sm:text-xl">Zeit ist abgelaufen</p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="inline-flex min-h-[52px] min-w-[min(100%,18rem)] items-center justify-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-base font-bold text-zinc-900 shadow-lg hover:bg-zinc-100 sm:min-h-14 sm:text-lg"
+              onClick={() => setFocusView(false)}
+            >
+              <Minimize2 className="h-5 w-5 shrink-0" aria-hidden />
+              Klein anzeigen
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
