@@ -65,6 +65,14 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     openTab: 'peerfeedback',
     render: ({ onOpenTool }) => renderToolPlaceholder('Peer-Feedback', 'peerfeedback', onOpenTool),
   },
+  pictureload: {
+    type: 'pictureload',
+    title: 'Pictureload',
+    addLabel: 'Pictureload',
+    defaultSize: { width: 420, height: 280 },
+    openTab: 'pictureload',
+    render: ({ onOpenTool }) => renderToolPlaceholder('Pictureload', 'pictureload', onOpenTool),
+  },
 };
 
 export const moduleRegistryList = Object.values(moduleRegistry);
