@@ -1,6 +1,8 @@
 -- TafelFlow Buzzer
 -- Im Supabase SQL Editor ausfuehren. Realtime wird am Ende fuer die drei Tabellen aktiviert.
 
+create extension if not exists pgcrypto;
+
 alter table public.sessions
   alter column permissions set default '{
     "writeBoard": true,
@@ -505,3 +507,5 @@ exception
   when duplicate_object then null;
   when undefined_object then null;
 end $$;
+
+notify pgrst, 'reload schema';

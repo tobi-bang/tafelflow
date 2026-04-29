@@ -533,31 +533,6 @@ export default function SessionView() {
         </div>
       )}
 
-      {isTeacher && !previewAsStudent && session.presentationMode && (
-        <button
-          type="button"
-          onClick={() => setShowShare(true)}
-          className="hidden shrink-0 items-center justify-between gap-5 border-b border-blue-200 bg-blue-950 px-6 py-3 text-left text-white shadow-sm lg:flex"
-          title="QR-Code und Beitrittslink anzeigen"
-        >
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="rounded-2xl bg-white p-2">
-              <QRCodeSVG value={joinUrl} size={72} level="H" includeMargin />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-wide text-blue-200">Promethean Board-Modus</div>
-              <div className="mt-0.5 text-2xl font-black tracking-tight">
-                SuS scannen den QR-Code oder nutzen den Raumcode
-              </div>
-            </div>
-          </div>
-          <div className="shrink-0 rounded-2xl border border-blue-300/50 bg-blue-900 px-5 py-3 text-center">
-            <div className="text-xs font-bold uppercase tracking-wide text-blue-200">Raumcode</div>
-            <div className="font-mono text-3xl font-black tracking-wider text-white">{session.room_code}</div>
-          </div>
-        </button>
-      )}
-
       <div className="flex-1 flex overflow-hidden min-h-0 w-full min-w-0">
         {showLegacyToolRail && (
           <nav

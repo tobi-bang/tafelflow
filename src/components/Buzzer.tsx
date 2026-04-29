@@ -50,6 +50,9 @@ function displayNameFor(userId: string, participants: BuzzerParticipant[], fallb
 function buzzerErrorMessage(message: string | undefined): string {
   const raw = (message || '').trim();
   if (!raw) return 'Der Buzzer konnte nicht gespeichert werden.';
+  if (raw.includes('ensure_buzzer_session') || raw.includes('PGRST202')) {
+    return 'Supabase-Buzzer-Setup fehlt: Bitte das SQL-Skript supabase/migrations/011_buzzer.sql im Supabase SQL Editor ausführen und danach die Seite neu laden.';
+  }
   if (raw.includes('BUZZER_LOCKED')) return 'Der Buzzer ist gerade gesperrt.';
   if (raw.includes('BUZZER_EXCLUDED')) return 'Du bist für diese Runde gesperrt.';
   if (raw.includes('BUZZER_PAUSED')) return 'Fairness-Modus: Du pausierst in dieser Runde.';
