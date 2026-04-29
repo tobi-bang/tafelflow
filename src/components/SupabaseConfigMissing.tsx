@@ -5,8 +5,8 @@ import React from 'react';
  */
 export default function SupabaseConfigMissing() {
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-center p-6">
-      <div className="max-w-lg w-full rounded-2xl border border-slate-600 bg-slate-800/80 p-8 shadow-xl">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-slate-900 p-4 text-slate-100 sm:p-6">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-600 bg-slate-800/80 p-5 shadow-xl sm:p-8">
         <h1 className="text-xl font-bold text-white mb-2">TafelFlow – Konfiguration fehlt</h1>
         <p className="text-slate-300 text-sm leading-relaxed mb-6">
           Die Verbindung zu Supabase ist nicht eingerichtet. Ohne die folgenden Umgebungsvariablen kann die App nicht

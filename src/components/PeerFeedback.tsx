@@ -134,7 +134,7 @@ export default function PeerFeedback({ sessionId, isTeacher, presentationMode }:
   const titleClass = presentationMode ? 'text-2xl md:text-3xl' : 'text-xl';
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 pb-12">
+    <div className="mx-auto w-full max-w-3xl space-y-6 pb-12 sm:space-y-8">
       {isTeacher && (
         <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
           <h2 className="font-bold text-slate-800 text-base sm:text-lg">Aufgabe festlegen</h2>
@@ -251,8 +251,8 @@ export default function PeerFeedback({ sessionId, isTeacher, presentationMode }:
                 const a = averages[c.id];
                 const avg = a.n > 0 ? (a.sum / a.n).toFixed(2) : '–';
                 return (
-                  <div key={c.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
-                    <span className="text-slate-700 font-medium">{c.label}</span>
+                  <div key={c.id} className="flex items-center justify-between gap-3 border-b border-slate-100 py-2 last:border-0">
+                    <span className="min-w-0 break-words font-medium text-slate-700">{c.label}</span>
                     <span className="text-lg font-bold text-blue-700">{avg}</span>
                   </div>
                 );
@@ -276,8 +276,8 @@ export default function PeerFeedback({ sessionId, isTeacher, presentationMode }:
                     <div className="text-xs text-slate-400 font-mono mb-2">{e.voterId.slice(0, 8)}…</div>
                     <div className="space-y-1">
                       {data.criteria.map((c) => (
-                        <div key={c.id} className="flex justify-between">
-                          <span>{c.label}</span>
+                        <div key={c.id} className="flex justify-between gap-3">
+                          <span className="min-w-0 break-words">{c.label}</span>
                           <span className="font-semibold">{e.ratings[c.id] ?? '–'}/5</span>
                         </div>
                       ))}

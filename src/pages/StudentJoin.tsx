@@ -166,7 +166,7 @@ export default function StudentJoin() {
   };
 
   return (
-    <div className="flex min-h-dvh w-full max-w-full flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50 px-4 py-6 sm:min-h-screen sm:px-6 sm:py-10">
+    <div className="flex min-h-dvh w-full max-w-full flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50 px-4 py-6 sm:px-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

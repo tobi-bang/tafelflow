@@ -36,7 +36,7 @@ function appendImageAcrossPages(pdf: InstanceType<typeof jsPDF>, imgData: string
   heightLeft -= pageHeight;
   while (heightLeft > 0) {
     position = heightLeft - imgHeightMm;
-    pdf.addPage('l', 'mm', 'a4');
+    pdf.addPage('a4', 'l');
     pdf.addImage(imgData, 'PNG', 0, position, imgWidthMm, imgHeightMm);
     heightLeft -= pageHeight;
   }

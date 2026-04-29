@@ -321,7 +321,7 @@ export default function BoardTimerModal({ open, onClose }: { open: boolean; onCl
         aria-label={focusView ? 'Zurück zur normalen Timer-Ansicht' : 'Schließen'}
         onClick={() => (focusView ? setFocusView(false) : onClose())}
       />
-      <div className="pointer-events-none absolute inset-0 flex items-end justify-center overflow-hidden overscroll-behavior-contain p-0 pb-[env(safe-area-inset-bottom)] sm:items-center sm:p-4 sm:pb-4">
+      <div className="pointer-events-none absolute inset-0 flex items-end justify-center overflow-hidden overscroll-contain p-0 pb-[env(safe-area-inset-bottom)] sm:items-center sm:p-4 sm:pb-4">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}

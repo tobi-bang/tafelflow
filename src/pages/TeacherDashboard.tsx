@@ -112,7 +112,7 @@ export default function TeacherDashboard() {
       alert(
         `Sitzung erstellt.\n\nRaumcode für SuS: ${roomCode}\n\nHast du dir die PIN notiert? Sie wird nicht noch einmal angezeigt.`
       );
-      navigate(`/session/${sessionId}`);
+      navigate(`/session/${sessionId}?board=1`);
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : 'Erstellen fehlgeschlagen';
@@ -139,26 +139,26 @@ export default function TeacherDashboard() {
 
   if (!authReady) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <div className="flex min-h-dvh items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-12">
-      <header className="flex flex-col gap-6 mb-12 md:flex-row md:justify-between md:items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Lehrkraft-Bereich</h1>
+    <div className="mx-auto min-h-dvh max-w-7xl px-4 py-6 sm:px-6 sm:py-10 md:py-12">
+      <header className="mb-8 flex flex-col gap-5 md:mb-12 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold text-slate-900 sm:text-3xl">Lehrkraft-Bereich</h1>
           <p className="text-slate-500 mt-1">
             Geschützt: nur für Lehrkräfte. Hier erstellst und verwaltest du Sitzungen und Freigaben für SuS.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3 shrink-0">
+        <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2 md:flex md:shrink-0 md:flex-wrap">
           <button
             type="button"
             onClick={() => setIsCreating(true)}
-            className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+            className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-lg shadow-blue-200 transition-all hover:bg-blue-700"
           >
             <Plus className="w-5 h-5" />
             Neue Sitzung
@@ -166,7 +166,7 @@ export default function TeacherDashboard() {
           <button
             type="button"
             onClick={logout}
-            className="bg-white text-slate-700 border border-slate-200 px-5 py-3 rounded-2xl font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all"
+            className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition-all hover:bg-slate-50"
             title="Abmelden"
           >
             <LogOut className="w-5 h-5" />
@@ -175,7 +175,7 @@ export default function TeacherDashboard() {
         </div>
       </header>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
         <AnimatePresence>
           {sessions.map((session) => (
             <motion.div
@@ -184,13 +184,13 @@ export default function TeacherDashboard() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between group"
+              className="group flex min-w-0 flex-col justify-between rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6"
             >
               <div>
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-xl font-bold text-slate-900">{session.name}</h3>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <h3 className="min-w-0 break-words text-lg font-bold text-slate-900 sm:text-xl">{session.name}</h3>
                   <span
-                    className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
                       session.status === 'active'
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-slate-100 text-slate-600'
@@ -211,16 +211,17 @@ export default function TeacherDashboard() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => navigate(`/session/${session.id}`)}
-                  className="flex-1 bg-slate-900 text-white py-3 rounded-xl font-medium hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                  onClick={() => navigate(`/session/${session.id}?board=1`)}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 font-medium text-white transition-colors hover:bg-slate-800"
                 >
-                  Öffnen
+                  Am Board öffnen
                   <ExternalLink className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => deleteSession(session.id)}
-                  className="p-3 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                  className="min-h-12 min-w-12 rounded-xl p-3 text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-600"
+                  aria-label="Sitzung löschen"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -230,7 +231,7 @@ export default function TeacherDashboard() {
         </AnimatePresence>
 
         {sessions.length === 0 && !isCreating && (
-          <div className="col-span-full py-24 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200">
+          <div className="col-span-full rounded-3xl border-2 border-dashed border-slate-200 bg-white px-4 py-16 text-center sm:py-24">
             <Presentation className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <p className="text-slate-500 text-lg">Noch keine Sitzungen in diesem Browser.</p>
             <button
@@ -245,11 +246,11 @@ export default function TeacherDashboard() {
       </div>
 
       {isCreating && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-6 sm:pb-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+            className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-8"
           >
             <h2 className="text-2xl font-bold mb-2">Neue Sitzung</h2>
             <p className="text-slate-500 text-sm mb-6">
@@ -274,17 +275,17 @@ export default function TeacherDashboard() {
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none mb-6"
                 autoComplete="new-password"
               />
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="flex-1 px-4 py-3 rounded-xl font-medium text-slate-600 hover:bg-slate-50"
+                  className="min-h-12 flex-1 rounded-xl px-4 py-3 font-medium text-slate-600 hover:bg-slate-50"
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-xl font-semibold hover:bg-blue-700 shadow-lg"
+                  className="min-h-12 flex-1 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white shadow-lg hover:bg-blue-700"
                 >
                   Erstellen
                 </button>

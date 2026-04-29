@@ -5,8 +5,25 @@
 }
 
 @layer base {
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900;
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
   }
 }
 

@@ -299,7 +299,7 @@ export default function Pictureload({
     const input = e.target;
     // Wichtig: FileList ist in WebKit/Blink oft an das Input-Element gebunden und wird durch
     // value='' geleert. Zuerst in ein Array kopieren, sonst ist list.length nach dem Reset 0.
-    const files =
+    const files: File[] =
       input.files && input.files.length > 0 ? Array.from(input.files) : [];
     input.value = '';
 
@@ -340,7 +340,10 @@ export default function Pictureload({
         if (result.ok) {
           okCount += 1;
         } else {
-          errors.push({ fileName: file.name || `Datei ${i + 1}`, message: result.message });
+          errors.push({
+            fileName: file.name || `Datei ${i + 1}`,
+            message: 'message' in result ? result.message : 'Upload fehlgeschlagen.',
+          });
         }
         setUploadProgress({ current: i + 1, total: files.length });
       }

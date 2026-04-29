@@ -973,17 +973,18 @@ export default function Board({
                         ['#000000', 'Schwarz'],
                       ] as const
                     ).map(([c, name]) => (
-                      <ColorButton
-                        key={c}
-                        color={c}
-                        active={color === c}
-                        onClick={() => {
-                          setColor(c);
-                          setToolMode('pen');
-                          setMobileBoardSheetOpen(false);
-                        }}
-                        label={name}
-                      />
+                      <Fragment key={c}>
+                        <ColorButton
+                          color={c}
+                          active={color === c}
+                          onClick={() => {
+                            setColor(c);
+                            setToolMode('pen');
+                            setMobileBoardSheetOpen(false);
+                          }}
+                          label={name}
+                        />
+                      </Fragment>
                     ))}
                   </div>
                 </section>

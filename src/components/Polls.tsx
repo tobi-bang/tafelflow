@@ -143,7 +143,7 @@ export default function Polls({
   const wrapClass = presentationMode ? 'max-w-5xl' : 'max-w-3xl';
 
   return (
-    <div className={`${wrapClass} mx-auto space-y-8`}>
+    <div className={`${wrapClass} mx-auto w-full space-y-6 sm:space-y-8`}>
       {isTeacher && (
         <button
           type="button"
@@ -161,10 +161,10 @@ export default function Polls({
             key={poll.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100"
+            className="rounded-3xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6 md:p-8"
           >
-            <div className="flex justify-between items-start mb-6 gap-4">
-              <h3 className={`font-bold text-slate-900 leading-tight ${qClass}`}>{poll.question}</h3>
+            <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row">
+              <h3 className={`min-w-0 break-words font-bold leading-tight text-slate-900 ${qClass}`}>{poll.question}</h3>
               {isTeacher && (
                 <div className="flex flex-wrap gap-2 shrink-0 justify-end">
                   <button
@@ -214,8 +214,8 @@ export default function Polls({
                           : 'border-slate-200 hover:border-blue-400'
                       }`}
                     >
-                      <div className="flex justify-between items-center relative z-10 gap-4">
-                        <span>{option}</span>
+                      <div className="relative z-10 flex items-center justify-between gap-4">
+                        <span className="min-w-0 break-words">{option}</span>
                         {isTeacher && (
                           <span className={`text-slate-400 shrink-0 ${presentationMode ? 'text-lg' : ''}`}>
                             {count} Stimmen
@@ -269,8 +269,8 @@ export default function Polls({
       </div>
 
       {isCreating && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-6 sm:pb-6">
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-8">
             <h2 className="text-2xl font-bold mb-6">Umfrage erstellen</h2>
             <form onSubmit={createPoll}>
               <div className="mb-6">
@@ -287,7 +287,7 @@ export default function Polls({
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Optionen</label>
                 {newOptions.map((opt, idx) => (
-                  <div key={idx} className="flex gap-2 mb-2">
+                  <div key={idx} className="mb-2 flex gap-2">
                     <input
                       type="text"
                       value={opt}
@@ -305,11 +305,11 @@ export default function Polls({
                   + Option hinzufügen
                 </button>
               </div>
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-3 rounded-xl font-medium text-slate-600 hover:bg-slate-50">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button type="button" onClick={() => setIsCreating(false)} className="min-h-12 flex-1 rounded-xl py-3 font-medium text-slate-600 hover:bg-slate-50">
                   Abbrechen
                 </button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 shadow-lg">
+                <button type="submit" className="min-h-12 flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white shadow-lg hover:bg-blue-700">
                   Erstellen
                 </button>
               </div>

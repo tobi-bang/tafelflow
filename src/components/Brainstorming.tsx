@@ -543,7 +543,7 @@ export default function Brainstorming({
           <button
             type="button"
             onClick={() => setIsAdding(true)}
-            className="absolute bottom-8 right-8 z-40 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
+            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 rounded-full bg-blue-600 p-4 text-white shadow-xl transition-all hover:scale-110 hover:bg-blue-700 sm:bottom-8 sm:right-8"
           >
             <Plus className="w-6 h-6" />
           </button>
@@ -561,11 +561,11 @@ export default function Brainstorming({
           />
         )}
         {isAddingHeading && isTeacher && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
+          <div className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-6 sm:pb-6">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+              className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-8"
             >
               <h2 className="text-2xl font-bold mb-6">Überschrift für Ideen</h2>
               <form onSubmit={addHeading}>
@@ -577,7 +577,7 @@ export default function Brainstorming({
                   placeholder="z. B. Vorteile · Nachteile · offene Fragen"
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none mb-6"
                 />
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <button
                     type="button"
                     onClick={() => setIsAddingHeading(false)}
@@ -601,7 +601,7 @@ export default function Brainstorming({
   }
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-slate-100 p-8">
+    <div className="relative h-full w-full overflow-hidden bg-slate-100 p-3 sm:p-6 md:p-8">
       <div className="w-full h-full relative">
         {isTeacher && (
           <button
@@ -659,7 +659,7 @@ export default function Brainstorming({
         <button
           type="button"
           onClick={() => setIsAdding(true)}
-          className="absolute bottom-8 right-8 z-40 bg-blue-600 text-white p-4 rounded-full shadow-xl hover:bg-blue-700 transition-all hover:scale-110"
+          className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-40 rounded-full bg-blue-600 p-4 text-white shadow-xl transition-all hover:scale-110 hover:bg-blue-700 sm:bottom-8 sm:right-8"
         >
           <Plus className="w-6 h-6" />
         </button>
@@ -678,11 +678,11 @@ export default function Brainstorming({
       )}
 
       {isAddingHeading && isTeacher && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
+        <div className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-6 sm:pb-6">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+            className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-8"
           >
             <h2 className="text-2xl font-bold mb-6">Überschrift für Ideen</h2>
             <form onSubmit={addHeading}>
@@ -694,7 +694,7 @@ export default function Brainstorming({
                 placeholder="z. B. Vorteile · Nachteile · offene Fragen"
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none mb-6"
               />
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => setIsAddingHeading(false)}
@@ -781,13 +781,13 @@ function DraggableBoardSticky({
       <div
         className={`shadow-lg relative ${
           isHeading
-            ? 'min-w-[300px] max-w-[480px] px-5 py-4 rounded-b-xl rounded-tr-xl bg-slate-200 border-2 border-slate-400'
+            ? 'min-w-[min(300px,calc(100vw-2rem))] max-w-[min(480px,calc(100vw-2rem))] px-5 py-4 rounded-b-xl rounded-tr-xl bg-slate-200 border-2 border-slate-400'
             : `flex min-h-[10.5rem] flex-col rounded-b-xl rounded-tr-xl border-2 border-slate-300/80 ${
                 sticky.status === 'pending' ? 'ring-4 ring-blue-400 ring-opacity-40' : ''
               }`
         }`}
         style={{
-          width: isHeading ? undefined : IDEA_CARD_BASE_PX,
+          width: isHeading ? undefined : `min(${IDEA_CARD_BASE_PX}px, calc(100vw - 2rem))`,
           backgroundColor: isHeading ? undefined : sticky.color,
           transform: `scale(${displayScale})`,
           transformOrigin: 'top left',
@@ -1076,11 +1076,11 @@ function StickyFormModal({
   onPickColor: (c: string) => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6 z-[100]">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-6 sm:pb-6">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl"
+        className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-8"
       >
         <h2 className="text-2xl font-bold mb-6">{title}</h2>
         <form onSubmit={onSubmit}>
@@ -1091,14 +1091,14 @@ function StickyFormModal({
             placeholder="Schreibe deine Idee hier..."
             className="w-full min-h-40 px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none mb-6 resize-y text-base"
           />
-          <div className="flex gap-3 mb-6">
+          <div className="mb-6 flex flex-wrap gap-3">
             <ColorOption color="#fef08a" active={selectedColor === '#fef08a'} onClick={() => onPickColor('#fef08a')} />
             <ColorOption color="#bfdbfe" active={selectedColor === '#bfdbfe'} onClick={() => onPickColor('#bfdbfe')} />
             <ColorOption color="#bbf7d0" active={selectedColor === '#bbf7d0'} onClick={() => onPickColor('#bbf7d0')} />
             <ColorOption color="#fecaca" active={selectedColor === '#fecaca'} onClick={() => onPickColor('#fecaca')} />
             <ColorOption color="#ddd6fe" active={selectedColor === '#ddd6fe'} onClick={() => onPickColor('#ddd6fe')} />
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <button
               type="button"
               onClick={onClose}

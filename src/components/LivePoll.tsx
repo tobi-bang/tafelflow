@@ -115,7 +115,7 @@ export default function LivePoll({ sessionId, isTeacher, presentationMode }: Liv
     : 'min-h-[3rem] text-base py-3 px-4';
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 pb-12">
+    <div className="mx-auto w-full max-w-3xl space-y-6 pb-12 sm:space-y-8">
       {isTeacher && (
         <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
           <h2 className="font-bold text-slate-800 text-base sm:text-lg">Abstimmung vorbereiten</h2>
@@ -245,8 +245,8 @@ export default function LivePoll({ sessionId, isTeacher, presentationMode }: Liv
                 const pct = totalVotes > 0 ? Math.round((n / totalVotes) * 100) : 0;
                 return (
                   <div key={i}>
-                    <div className="flex justify-between text-sm font-medium text-slate-700 mb-1">
-                      <span className="pr-2">{label}</span>
+                    <div className="mb-1 flex justify-between text-sm font-medium text-slate-700">
+                      <span className="min-w-0 break-words pr-2">{label}</span>
                       <span className="shrink-0 text-slate-500">
                         {n} · {pct}%
                       </span>

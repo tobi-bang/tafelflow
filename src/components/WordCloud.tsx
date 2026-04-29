@@ -142,18 +142,18 @@ export default function WordCloud({
       )}
 
       <div
-        className={`flex-1 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-wrap items-center justify-center overflow-y-auto content-center ${
-          presentationMode ? 'p-10 gap-x-10 gap-y-6' : 'p-8 gap-x-8 gap-y-4'
+        className={`flex-1 rounded-3xl border border-slate-100 bg-white shadow-sm flex flex-wrap content-center items-center justify-center overflow-y-auto ${
+          presentationMode ? 'gap-x-6 gap-y-5 p-4 sm:gap-x-10 sm:gap-y-6 sm:p-10' : 'gap-x-5 gap-y-4 p-4 sm:gap-x-8 sm:p-8'
         }`}
       >
         <AnimatePresence>
           {sortedWords.map(([word, count]) => (
-            <motion.div key={word} layout initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="relative group">
+            <motion.div key={word} layout initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.5 }} className="group relative max-w-full">
               <span
-                className={`font-bold transition-all cursor-default ${
+                className={`block max-w-full cursor-default break-words text-center font-bold leading-none transition-all [overflow-wrap:anywhere] ${
                   count > 5 ? 'text-blue-600' : count > 3 ? 'text-indigo-500' : count > 1 ? 'text-slate-700' : 'text-slate-400'
                 }`}
-                style={{ fontSize: `${Math.min(16 + count * fontStep, maxFont)}px` }}
+                style={{ fontSize: `min(${Math.min(16 + count * fontStep, maxFont)}px, ${presentationMode ? '18vw' : '14vw'})` }}
               >
                 {word}
               </span>

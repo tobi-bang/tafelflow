@@ -30,7 +30,7 @@ export default function SessionToolShell({
   const headerPad =
     variant === 'canvas'
       ? presentationMode
-        ? 'py-2 sm:py-2.5 md:py-3.5'
+        ? 'py-3 sm:py-3.5 md:py-4'
         : 'py-1.5 sm:py-2 md:py-3'
       : presentationMode
         ? 'py-4 sm:py-5'
@@ -38,7 +38,7 @@ export default function SessionToolShell({
   const titleClass =
     variant === 'canvas'
       ? presentationMode
-        ? 'text-base sm:text-lg md:text-xl'
+        ? 'text-xl sm:text-2xl xl:text-3xl'
         : 'text-sm sm:text-base md:text-lg'
       : presentationMode
         ? 'text-xl sm:text-2xl'

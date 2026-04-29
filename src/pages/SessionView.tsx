@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -129,6 +129,8 @@ export default function SessionView() {
   const [boardTimerOpen, setBoardTimerOpen] = useState(false);
 
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const boardModeRequested = searchParams.get('board') === '1';
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -190,6 +192,14 @@ export default function SessionView() {
       supabase.removeChannel(channel);
     };
   }, [sessionId, navigate]);
+
+  useEffect(() => {
+    if (!session || !isTeacher || !boardModeRequested) return;
+    setSearchParams({}, { replace: true });
+    if (session.presentationMode) return;
+    setSession({ ...session, presentationMode: true });
+    void supabase.from('sessions').update({ presentation_mode: true }).eq('id', session.id);
+  }, [boardModeRequested, isTeacher, session, setSearchParams]);
 
   const participantTabs = useMemo(() => {
     if (!session) return ALL_TABS;
@@ -344,8 +354,8 @@ export default function SessionView() {
   const studentBlocked = (!isTeacher || previewAsStudent) && session.status !== 'active';
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 overflow-hidden">
-      <header className="min-h-14 md:h-16 bg-white border-b border-slate-200 px-2 sm:px-4 md:px-6 flex flex-wrap items-center justify-between gap-y-2 shrink-0 z-20 py-2 md:py-0">
+    <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-slate-50">
+      <header className="z-20 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-y-2 border-b border-slate-200 bg-white px-2 py-2 sm:px-4 md:h-16 md:px-6 md:py-0">
         <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 md:flex-initial">
           <button
             type="button"
@@ -387,7 +397,7 @@ export default function SessionView() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none touch-pan-x max-md:w-full max-md:justify-end max-md:pb-0.5 md:max-w-none md:overflow-visible">
+        <div className="scrollbar-none flex shrink-0 touch-pan-x items-center gap-1 overflow-x-auto max-md:w-full max-md:justify-start max-md:pb-0.5 sm:gap-2 md:max-w-none md:overflow-visible">
           {showToolsInHeader && (
             <button
               type="button"
@@ -449,10 +459,10 @@ export default function SessionView() {
                     ? 'bg-amber-100 text-amber-800'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
-                title="Präsentationsmodus"
+                title="Board-Modus für Promethean / digitale Tafel"
               >
                 <Presentation className="w-4 h-4" />
-                <span className="text-sm">Tafel</span>
+                <span className="text-sm">Board</span>
               </button>
               <button
                 type="button"
@@ -492,6 +502,31 @@ export default function SessionView() {
           <span className="font-semibold">Vorschau: Schüleransicht</span>
           <span className="hidden sm:inline"> — Verwaltung (Beenden, Einstellungen, QR) bleibt oben sichtbar.</span>
         </div>
+      )}
+
+      {isTeacher && !previewAsStudent && session.presentationMode && (
+        <button
+          type="button"
+          onClick={() => setShowShare(true)}
+          className="hidden shrink-0 items-center justify-between gap-5 border-b border-blue-200 bg-blue-950 px-6 py-3 text-left text-white shadow-sm lg:flex"
+          title="QR-Code und Beitrittslink anzeigen"
+        >
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="rounded-2xl bg-white p-2">
+              <QRCodeSVG value={joinUrl} size={72} level="H" includeMargin />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs font-bold uppercase tracking-wide text-blue-200">Promethean Board-Modus</div>
+              <div className="mt-0.5 text-2xl font-black tracking-tight">
+                SuS scannen den QR-Code oder nutzen den Raumcode
+              </div>
+            </div>
+          </div>
+          <div className="shrink-0 rounded-2xl border border-blue-300/50 bg-blue-900 px-5 py-3 text-center">
+            <div className="text-xs font-bold uppercase tracking-wide text-blue-200">Raumcode</div>
+            <div className="font-mono text-3xl font-black tracking-wider text-white">{session.room_code}</div>
+          </div>
+        </button>
       )}
 
       <div className="flex-1 flex overflow-hidden min-h-0 w-full min-w-0">
@@ -721,9 +756,13 @@ export default function SessionView() {
       </div>
 
       {showToolPicker && session && (
-        <Modal onClose={() => setShowToolPicker(false)} title="Tool wählen">
-          <p className="text-slate-600 text-sm mb-4">Tippe ein Werkzeug – ideal für Smartphones und Tablets.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Modal onClose={() => setShowToolPicker(false)} title="Tool wählen" size={isTeacher && session.presentationMode ? 'wide' : 'default'}>
+          <p className="text-slate-600 text-sm mb-4">
+            {isTeacher && session.presentationMode
+              ? 'Wähle das Werkzeug, das vorne am Board gezeigt wird. SuS arbeiten parallel über Smartphone oder Tablet mit.'
+              : 'Tippe ein Werkzeug – ideal für Smartphones und Tablets.'}
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {participantTabs.map((tab) => (
               <button
                 key={tab}
@@ -754,7 +793,7 @@ export default function SessionView() {
           <div className="flex flex-col items-center text-center">
             <p className="text-slate-600 mb-2 font-mono font-bold text-lg">{session.room_code}</p>
             <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 mb-6">
-              <QRCodeSVG value={joinUrl} size={session.presentationMode ? 280 : 220} level="H" includeMargin />
+              <QRCodeSVG value={joinUrl} size={session.presentationMode ? 320 : 220} level="H" includeMargin />
             </div>
             <p className="text-slate-600 mb-4">QR-Code scannen oder Link teilen:</p>
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 w-full flex items-center justify-between mb-2">
@@ -914,8 +953,8 @@ export default function SessionView() {
                 <div className="flex items-center gap-3">
                   <Presentation className="w-5 h-5" />
                   <div className="text-left">
-                    <span className="font-bold block">Präsentations- / Tafelmodus</span>
-                    <span className="text-xs font-normal opacity-80">Größerer QR-Code, optimierte Ansicht</span>
+                    <span className="font-bold block">Promethean Board-Modus</span>
+                    <span className="text-xs font-normal opacity-80">Große Touch-Bedienung, sichtbarer QR-Code, optimierte Front-of-Class-Ansicht</span>
                   </div>
                 </div>
                 <div className={`w-12 h-6 rounded-full relative transition-colors ${session.presentationMode ? 'bg-amber-500' : 'bg-slate-300'}`}>
@@ -1014,7 +1053,17 @@ function NavIcon({
   );
 }
 
-function Modal({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
+function Modal({
+  onClose,
+  title,
+  children,
+  size = 'default',
+}: {
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+  size?: 'default' | 'wide';
+}) {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1027,7 +1076,7 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden overscroll-behavior-contain bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-4 sm:pb-4 md:p-6"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden overscroll-contain bg-slate-900/50 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-4 sm:pb-4 md:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -1036,7 +1085,9 @@ function Modal({ onClose, title, children }: { onClose: () => void; title: strin
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.2 }}
-        className="my-auto flex min-h-0 w-full max-w-lg max-h-[min(92dvh,56rem)] flex-col rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl"
+        className={`my-auto flex min-h-0 w-full max-h-[min(92dvh,56rem)] flex-col rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${
+          size === 'wide' ? 'max-w-4xl' : 'max-w-lg'
+        }`}
       >
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 pb-3 pt-5 sm:px-8 sm:pt-6">
           <h2 id={titleId} className="break-words pr-2 text-xl font-bold leading-tight text-slate-900 sm:text-2xl">
@@ -1075,4 +1126,3 @@ function PermissionToggle({ label, active, onClick }: { label: string; active: b
     </button>
   );
 }
-
