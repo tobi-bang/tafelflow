@@ -72,12 +72,14 @@ function StickyHeadingMenu({
   headings,
   onAssign,
   menuPlacement = 'above',
+  compact = false,
 }: {
   currentHeadingId: string | null;
   headings: StickyNote[];
   onAssign: (headingId: string | null) => void;
   /** „above“: Menü über dem Button (Board). „below“: nach unten (Tafelmodus, weniger Abschneiden in Spalten). */
   menuPlacement?: 'above' | 'below';
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -122,12 +124,13 @@ function StickyHeadingMenu({
   }, [open]);
 
   const label = useMemo(() => {
-    if (!currentHeadingId) return 'Ohne Überschrift';
+    if (!currentHeadingId) return compact ? 'Ohne' : 'Ohne Überschrift';
     const h = headings.find((x) => x.id === currentHeadingId);
-    if (!h) return 'Überschrift';
+    if (!h) return compact ? 'Spalte' : 'Überschrift';
     const t = h.content.trim();
-    return t.length > 14 ? `${t.slice(0, 12)}…` : t;
-  }, [currentHeadingId, headings]);
+    const limit = compact ? 8 : 14;
+    return t.length > limit ? `${t.slice(0, Math.max(1, limit - 2))}…` : t;
+  }, [currentHeadingId, headings, compact]);
 
   return (
     <div className="relative shrink-0" ref={rootRef}>
@@ -142,12 +145,16 @@ function StickyHeadingMenu({
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="inline-flex max-w-[10rem] items-center gap-0.5 rounded-lg border border-slate-400/70 bg-white/90 px-1.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm hover:bg-white"
+        className={`inline-flex items-center gap-0.5 border border-slate-400/60 bg-white/85 text-left font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur-sm hover:bg-white ${
+          compact
+            ? 'h-7 max-w-[6.5rem] rounded-md px-1.5 text-[10px]'
+            : 'max-w-[10rem] rounded-lg px-1.5 py-1.5 text-[11px]'
+        }`}
         title="Unter Überschrift einordnen"
       >
-        <Layers className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+        <Layers className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} shrink-0 opacity-80`} aria-hidden />
         <span className="min-w-0 truncate">{label}</span>
-        <ChevronDown className={`h-3 w-3 shrink-0 opacity-70 ${open ? 'rotate-180' : ''}`} aria-hidden />
+        <ChevronDown className={`${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'} shrink-0 opacity-70 ${open ? 'rotate-180' : ''}`} aria-hidden />
       </button>
       {open && menuPlacement === 'above' && (
         <div
@@ -779,10 +786,10 @@ function DraggableBoardSticky({
       )}
 
       <div
-        className={`shadow-lg relative ${
+        className={`group/sticky relative shadow-lg ${
           isHeading
             ? 'min-w-[min(300px,calc(100vw-2rem))] max-w-[min(480px,calc(100vw-2rem))] px-5 py-4 rounded-b-xl rounded-tr-xl bg-slate-200 border-2 border-slate-400'
-            : `flex min-h-[10.5rem] flex-col rounded-b-xl rounded-tr-xl border-2 border-slate-300/80 ${
+            : `flex min-h-[10.5rem] flex-col overflow-hidden rounded-b-xl rounded-tr-xl border-2 border-slate-300/80 ${
                 sticky.status === 'pending' ? 'ring-4 ring-blue-400 ring-opacity-40' : ''
               }`
         }`}
@@ -804,7 +811,7 @@ function DraggableBoardSticky({
             {sticky.content}
           </p>
         ) : (
-          <div className="flex min-h-[7.5rem] flex-1 flex-col justify-center px-4 pb-2 pt-4">
+          <div className="flex min-h-[9.75rem] flex-1 flex-col justify-center px-5 pb-9 pt-5">
             <p
               className="text-slate-900 break-words font-semibold leading-tight tracking-tight"
               style={{
@@ -816,8 +823,9 @@ function DraggableBoardSticky({
             </p>
           </div>
         )}
-        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center border-t border-black/10 px-2 pb-2 pt-2">
-          <div className="flex max-w-[min(100%,11rem)] flex-wrap items-center gap-0.5 justify-self-start shrink-0">
+        {!isHeading && (
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
+            <div className="pointer-events-auto flex min-w-0 items-center gap-1">
             {isTeacher && sticky.status === 'pending' && sticky.stickyType === 'note' && (
               <button
                 type="button"
@@ -829,10 +837,11 @@ function DraggableBoardSticky({
                   e.stopPropagation();
                   onApprove();
                 }}
-                className="p-2 hover:bg-emerald-500/20 rounded-lg text-emerald-700"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/45 text-emerald-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-emerald-100"
                 title="Freigeben"
+                aria-label="Karte freigeben"
               >
-                <Check className="w-5 h-5" />
+                <Check className="h-4 w-4" />
               </button>
             )}
             {isTeacher && (
@@ -846,10 +855,11 @@ function DraggableBoardSticky({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="p-2 hover:bg-rose-500/20 rounded-lg text-rose-700"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/45 text-rose-700 shadow-sm backdrop-blur-sm transition-colors hover:bg-rose-100"
                 title="Karte löschen"
+                aria-label="Karte löschen"
               >
-                <Trash2 className="w-5 h-5" />
+                <Trash2 className="h-4 w-4" />
               </button>
             )}
             {sticky.stickyType === 'note' && canModerate && (
@@ -857,17 +867,18 @@ function DraggableBoardSticky({
                 currentHeadingId={sticky.underHeadingId}
                 headings={headings}
                 onAssign={onAssign}
+                compact
               />
             )}
-          </div>
-          <div className="min-w-0 flex items-center justify-center px-1">
+            </div>
+            <div className="pointer-events-none flex min-w-0 flex-1 items-center justify-center px-1">
             {showAuthorOnStickies && sticky.authorName.trim() !== '' && (
-              <span className="text-xs font-bold uppercase text-slate-600 opacity-75 truncate text-center">
+              <span className="truncate rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600/80 backdrop-blur-sm">
                 {sticky.authorName}
               </span>
             )}
-          </div>
-          <div className="justify-self-end shrink-0 flex items-center justify-center min-w-9 min-h-9">
+            </div>
+            <div className="pointer-events-auto flex shrink-0 items-center justify-center">
             {canResize && (
               <StickyResizeHandle
                 displayScale={displayScale}
@@ -876,8 +887,9 @@ function DraggableBoardSticky({
                 ariaLabel={isHeading ? 'Größe der Überschrift' : 'Größe der Ideenkarte'}
               />
             )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </motion.div>
   );
@@ -952,10 +964,10 @@ function StickyResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
-      className="w-9 h-9 rounded-lg rounded-br-xl bg-slate-800/90 border border-slate-600 cursor-nwse-resize flex items-end justify-end p-1 shadow-md touch-none shrink-0"
+      className="flex h-7 w-7 shrink-0 cursor-nwse-resize items-end justify-end rounded-md rounded-br-xl border border-slate-600 bg-slate-800/85 p-1 text-white/90 shadow-sm touch-none transition-colors hover:bg-slate-900"
       title="Größe ziehen"
     >
-      <div className="w-2.5 h-2.5 rounded-br border-r-2 border-b-2 border-white/90 opacity-95" />
+      <div className="h-2 w-2 rounded-br border-b-2 border-r-2 border-white/90 opacity-95" />
     </div>
   );
 }

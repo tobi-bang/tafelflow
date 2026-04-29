@@ -1,10 +1,33 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GraduationCap, Users, Presentation, ShieldCheck } from 'lucide-react';
+import { GraduationCap, Users, Presentation, ShieldCheck, LogOut } from 'lucide-react';
 import { motion } from 'motion/react';
+import { supabase } from '../lib/supabase';
+import { requireTeacher } from '../lib/role';
 
 export default function Home() {
   const navigate = useNavigate();
+  const [teacherSignedIn, setTeacherSignedIn] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user || cancelled) return;
+      const ok = await requireTeacher();
+      if (!cancelled) setTeacherSignedIn(ok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setTeacherSignedIn(false);
+  };
 
   return (
     <div className="min-h-dvh w-full max-w-full overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-50">
@@ -15,9 +38,30 @@ export default function Home() {
           </div>
           <h1 className="truncate text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">TafelFlow</h1>
         </div>
-        <div className="hidden text-xs font-medium text-slate-500 sm:block">
-          Geschützt für Lehrkräfte · reduziert für SuS
-        </div>
+        {teacherSignedIn ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigate('/teacher')}
+              className="min-h-11 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 sm:px-4"
+            >
+              Sitzungen
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+              title="Abmelden"
+              aria-label="Abmelden"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
+        ) : (
+          <div className="hidden text-xs font-medium text-slate-500 sm:block">
+            Geschützt für Lehrkräfte · reduziert für SuS
+          </div>
+        )}
       </header>
 
       <main className="mx-auto max-w-7xl px-4 pb-10 pt-6 text-center sm:px-6 sm:pb-16 sm:pt-10">
@@ -33,7 +77,7 @@ export default function Home() {
           <div className="mx-auto grid max-w-4xl grid-cols-1 gap-4 text-left sm:gap-5 md:grid-cols-2">
             <button
               type="button"
-              onClick={() => navigate('/login')}
+              onClick={() => navigate(teacherSignedIn ? '/teacher' : '/login')}
               className="group min-h-[44px] rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:p-7"
             >
               <div className="flex items-start gap-3 sm:gap-4">
@@ -42,13 +86,19 @@ export default function Home() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-lg font-bold text-slate-900 sm:text-xl">Lehrkraft anmelden</span>
+                    <span className="text-lg font-bold text-slate-900 sm:text-xl">
+                      {teacherSignedIn ? 'Zum Lehrkraft-Bereich' : 'Lehrkraft anmelden'}
+                    </span>
                     <ShieldCheck className="h-5 w-5 shrink-0 text-blue-600 opacity-80" />
                   </div>
                   <p className="mt-1 text-sm text-slate-600 sm:text-base">
                     Geschütztes Dashboard: Sitzung erstellen, Inhalte freigeben, sperren und Ergebnisse exportieren.
                   </p>
-                  <p className="mt-3 text-xs text-slate-400 sm:text-sm">E-Mail + Passwort · Registrierung über „Noch kein Konto?“</p>
+                  <p className="mt-3 text-xs text-slate-400 sm:text-sm">
+                    {teacherSignedIn
+                      ? 'Angemeldet · Sitzungen wechseln oder neue Sitzung starten'
+                      : 'E-Mail + Passwort · Registrierung über „Noch kein Konto?“'}
+                  </p>
                 </div>
               </div>
             </button>

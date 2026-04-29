@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   Loader2,
   Lock,
+  LogOut,
   Maximize2,
   Minimize2,
   PanelLeft,
@@ -351,6 +352,11 @@ export default function SessionView() {
     }
   };
 
+  const logout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login', { replace: true });
+  };
+
   const studentBlocked = (!isTeacher || previewAsStudent) && session.status !== 'active';
 
   return (
@@ -440,6 +446,15 @@ export default function SessionView() {
             <>
               <button
                 type="button"
+                onClick={() => navigate('/teacher')}
+                className="flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                title="Zu allen Sitzungen"
+              >
+                <Presentation className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="hidden sm:inline">Sitzungen</span>
+              </button>
+              <button
+                type="button"
                 onClick={toggleSessionEnd}
                 className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-xl font-semibold transition-colors ${
                   session.status === 'archived'
@@ -491,6 +506,16 @@ export default function SessionView() {
                 title="Einstellungen"
               >
                 <Settings className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-rose-700 sm:px-3"
+                title="Abmelden"
+                aria-label="Abmelden"
+              >
+                <LogOut className="h-5 w-5 shrink-0" />
+                <span className="ml-2 hidden xl:inline text-sm font-semibold">Abmelden</span>
               </button>
             </>
           )}
