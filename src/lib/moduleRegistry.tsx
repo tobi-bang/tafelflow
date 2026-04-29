@@ -41,6 +41,14 @@ export const moduleRegistry: Record<string, ModuleRegistryEntry> = {
     openTab: 'brainstorming',
     render: ({ onOpenTool }) => renderToolPlaceholder('Ideensammeln', 'brainstorming', onOpenTool),
   },
+  buzzer: {
+    type: 'buzzer',
+    title: 'Buzzer',
+    addLabel: 'Buzzer',
+    defaultSize: { width: 420, height: 280 },
+    openTab: 'buzzer',
+    render: ({ onOpenTool }) => renderToolPlaceholder('Buzzer', 'buzzer', onOpenTool),
+  },
   wordcloud: {
     type: 'wordcloud',
     title: 'Wortwolke',

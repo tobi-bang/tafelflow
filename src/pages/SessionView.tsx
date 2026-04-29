@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   BarChart3,
+  BellRing,
   ChevronLeft,
   Clock,
   Cloud,
@@ -41,6 +42,7 @@ import WordCloud from '../components/WordCloud';
 import LivePoll from '../components/LivePoll';
 import PeerFeedback from '../components/PeerFeedback';
 import Pictureload from '../components/Pictureload';
+import Buzzer from '../components/Buzzer';
 import SessionToolShell from '../components/session/SessionToolShell';
 import BoardTimerModal from '../components/session/BoardTimerModal';
 import type { SessionTabId } from '../lib/sessionToolMeta';
@@ -91,6 +93,7 @@ function visibleTabsForStudent(p: SessionPermissions): Tab[] {
   const tabs: Tab[] = [];
   if (p.drawBoard) tabs.push('board');
   if (p.addSticky || p.moveSticky || p.organizeBrainstorm) tabs.push('brainstorming');
+  if (p.buzzer) tabs.push('buzzer');
   if (p.answerPoll) tabs.push('polls');
   if (p.submitWord) tabs.push('wordcloud');
   if (p.livePoll) tabs.push('livepoll');
@@ -102,6 +105,7 @@ function visibleTabsForStudent(p: SessionPermissions): Tab[] {
 const TAB_ICONS: Record<Tab, React.ReactNode> = {
   board: <Presentation className="w-6 h-6" />,
   brainstorming: <FileText className="w-6 h-6" />,
+  buzzer: <BellRing className="w-6 h-6" />,
   polls: <BarChart3 className="w-6 h-6" />,
   wordcloud: <Cloud className="w-6 h-6" />,
   livepoll: <Vote className="w-6 h-6" />,
@@ -595,7 +599,7 @@ export default function SessionView() {
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-slate-600 z-10 bg-slate-50">
               <p className="font-semibold text-slate-800 text-lg">Für dich ist gerade nichts freigeschaltet</p>
               <p className="text-sm mt-3 max-w-sm">
-                Die Lehrkraft kann unter Sitzungseinstellungen bei <strong>Nutzung für SuS</strong> Tafel, Ideen, Umfrage, Wortwolke, Live-Abstimmung oder Peer-Feedback aktivieren.
+                Die Lehrkraft kann unter Sitzungseinstellungen bei <strong>Nutzung für SuS</strong> Tafel, Ideen, Buzzer, Umfrage, Wortwolke, Live-Abstimmung oder Peer-Feedback aktivieren.
               </p>
             </div>
           )}
@@ -688,6 +692,24 @@ export default function SessionView() {
                       presentationMode={session.presentationMode}
                     />
                   </div>
+                </SessionToolShell>
+              </motion.div>
+            )}
+            {activeTab === 'buzzer' && participantTabs.includes('buzzer') && (
+              <motion.div
+                key="buzzer"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 w-full h-full flex flex-col min-h-0"
+              >
+                <SessionToolShell tabId="buzzer" role={sessionRole} presentationMode={session.presentationMode} variant="page">
+                  <Buzzer
+                    sessionId={session.id}
+                    isTeacher={effectiveIsTeacher}
+                    permissions={session.permissions}
+                    presentationMode={session.presentationMode}
+                  />
                 </SessionToolShell>
               </motion.div>
             )}
@@ -998,6 +1020,7 @@ export default function SessionView() {
                 <PermissionToggle label="Ideen hinzufügen" active={session.permissions.addSticky} onClick={() => togglePermission('addSticky')} />
                 <PermissionToggle label="Ideen verschieben" active={session.permissions.moveSticky} onClick={() => togglePermission('moveSticky')} />
                 <PermissionToggle label="Ideen sortieren (Moderation)" active={session.permissions.organizeBrainstorm} onClick={() => togglePermission('organizeBrainstorm')} />
+                <PermissionToggle label="Buzzer verwenden" active={session.permissions.buzzer} onClick={() => togglePermission('buzzer')} />
                 <PermissionToggle
                   label="Anzeigename bei Ideen verlangen (SuS)"
                   active={session.permissions.ideasRequireDisplayName}

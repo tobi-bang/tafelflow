@@ -8,11 +8,13 @@ export type SessionTabId =
   | 'wordcloud'
   | 'livepoll'
   | 'peerfeedback'
-  | 'pictureload';
+  | 'pictureload'
+  | 'buzzer';
 
 export const SESSION_TAB_ORDER: SessionTabId[] = [
   'board',
   'brainstorming',
+  'buzzer',
   'polls',
   'wordcloud',
   'livepoll',
@@ -40,6 +42,12 @@ export const SESSION_TOOL_META: Record<SessionTabId, SessionToolMeta> = {
     title: 'Ideen sammeln',
     descriptionTeacher: 'Karten anlegen, freigeben und zu Überschriften ordnen.',
     descriptionStudent: 'Schreibe Ideen auf Karten und ordne sie ggf. ein.',
+  },
+  buzzer: {
+    navLabel: 'Buzzer',
+    title: 'Buzzer',
+    descriptionTeacher: 'Ersten Buzz live sehen, Warteschlange steuern und Runden zurücksetzen.',
+    descriptionStudent: 'Drücke den Buzzer, sobald du dran sein möchtest.',
   },
   polls: {
     navLabel: 'Umfrage',

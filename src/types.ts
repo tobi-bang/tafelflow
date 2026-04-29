@@ -17,6 +17,8 @@ export interface SessionPermissions {
   pictureload: boolean;
   /** Pictureload: SuS-Uploads erst nach Lehrkraft-Freigabe für alle sichtbar (Moderation). */
   pictureloadModeration: boolean;
+  /** Buzzer: SuS dürfen live buzzern. */
+  buzzer: boolean;
   /**
    * Wenn true: SuS geben bei Beitritt einen Anzeigenamen an (sichtbar bei Ideen).
    * Wenn false: Name optional; Ideen ohne Namenszeile übersichtlicher.
@@ -133,6 +135,38 @@ export interface PictureloadImage {
   contentType: string;
   createdAt: string;
   moderationStatus: PictureloadModerationStatus;
+}
+
+export type BuzzerStatus = 'open' | 'locked';
+
+export interface BuzzerSession {
+  sessionId: string;
+  roundId: string;
+  status: BuzzerStatus;
+  fairnessMode: boolean;
+  silentMode: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BuzzerEvent {
+  id: string;
+  sessionId: string;
+  roundId: string;
+  userId: string;
+  displayName: string;
+  position: number;
+  createdAt: string;
+}
+
+export interface BuzzerParticipant {
+  sessionId: string;
+  userId: string;
+  displayName: string | null;
+  excluded: boolean;
+  pausedNextRound: boolean;
+  lastWonRoundId: string | null;
+  updatedAt: string;
 }
 
 /** Minimaler App-Nutzer (Supabase Auth, meist anonym) */

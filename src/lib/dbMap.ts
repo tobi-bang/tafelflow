@@ -8,6 +8,9 @@ import type {
   PollResponse,
   WordEntry,
   PictureloadImage,
+  BuzzerEvent,
+  BuzzerParticipant,
+  BuzzerSession,
 } from '../types';
 
 export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
@@ -24,6 +27,7 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
     peerFeedback: p.peerFeedback !== false,
     pictureload: p.pictureload !== false,
     pictureloadModeration: p.pictureloadModeration === true,
+    buzzer: p.buzzer !== false,
     ideasRequireDisplayName: p.ideasRequireDisplayName !== false,
     ideasDefaultScale: (() => {
       const v = p.ideasDefaultScale;
@@ -138,5 +142,41 @@ export function rowToPictureloadImage(row: Record<string, unknown>): Pictureload
     contentType: String(row.content_type ?? 'image/jpeg'),
     createdAt: String(row.created_at ?? ''),
     moderationStatus: parsePictureloadModerationStatus(row.moderation_status),
+  };
+}
+
+export function rowToBuzzerSession(row: Record<string, unknown>): BuzzerSession {
+  return {
+    sessionId: String(row.session_id ?? ''),
+    roundId: String(row.round_id ?? ''),
+    status: row.status === 'locked' ? 'locked' : 'open',
+    fairnessMode: row.fairness_mode === true,
+    silentMode: row.silent_mode === true,
+    createdAt: String(row.created_at ?? ''),
+    updatedAt: String(row.updated_at ?? ''),
+  };
+}
+
+export function rowToBuzzerEvent(row: Record<string, unknown>): BuzzerEvent {
+  return {
+    id: String(row.id ?? ''),
+    sessionId: String(row.session_id ?? ''),
+    roundId: String(row.round_id ?? ''),
+    userId: String(row.user_id ?? ''),
+    displayName: String(row.display_name ?? 'Anonym'),
+    position: Number(row.position ?? 0),
+    createdAt: String(row.created_at ?? ''),
+  };
+}
+
+export function rowToBuzzerParticipant(row: Record<string, unknown>): BuzzerParticipant {
+  return {
+    sessionId: String(row.session_id ?? ''),
+    userId: String(row.user_id ?? ''),
+    displayName: row.display_name == null ? null : String(row.display_name),
+    excluded: row.excluded === true,
+    pausedNextRound: row.paused_next_round === true,
+    lastWonRoundId: row.last_won_round_id == null ? null : String(row.last_won_round_id),
+    updatedAt: String(row.updated_at ?? ''),
   };
 }

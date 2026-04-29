@@ -32,6 +32,7 @@ create table if not exists public.sessions (
     "peerFeedback": true,
     "pictureload": true,
     "pictureloadModeration": false,
+    "buzzer": true,
     "ideasRequireDisplayName": true,
     "ideasDefaultScale": 1.35
   }'::jsonb,
@@ -254,7 +255,7 @@ begin
     trim(p_name),
     'active',
     false,
-    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"pictureload":true,"pictureloadModeration":false,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
+    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"pictureload":true,"pictureloadModeration":false,"buzzer":true,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
   )
   returning id into new_id;
 
@@ -439,7 +440,8 @@ create trigger on_auth_user_created
 -- Realtime: Unter Database → Replication in Supabase die Tabellen aktivieren
 -- oder einzeln (bei Fehler „already member“ ignorieren):
 --   alter publication supabase_realtime add table public.sessions;
---   ... board_objects, stickies, polls, poll_responses, words, pictureload_images
+--   ... board_objects, stickies, polls, poll_responses, words, pictureload_images,
+--   buzzer_sessions, buzzer_events, buzzer_participants
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
