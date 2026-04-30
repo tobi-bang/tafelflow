@@ -164,7 +164,7 @@ export function rowToBuzzerEvent(row: Record<string, unknown>): BuzzerEvent {
     roundId: String(row.round_id ?? ''),
     userId: String(row.user_id ?? ''),
     displayName: String(row.display_name ?? 'Anonym'),
-    position: Number(row.position ?? 0),
+    queue_position: Number(row.queue_position ?? 0),
     createdAt: String(row.created_at ?? ''),
   };
 }

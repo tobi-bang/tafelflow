@@ -41,14 +41,14 @@ create table if not exists public.buzzer_events (
   round_id uuid not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   display_name text not null,
-  position integer not null check (position > 0),
+  queue_position integer not null check (queue_position > 0),
   created_at timestamptz not null default now(),
   unique (session_id, round_id, user_id),
-  unique (session_id, round_id, position)
+  unique (session_id, round_id, queue_position)
 );
 
 create index if not exists idx_buzzer_events_round
-  on public.buzzer_events(session_id, round_id, position);
+  on public.buzzer_events(session_id, round_id, queue_position);
 
 create table if not exists public.buzzer_participants (
   session_id uuid not null references public.sessions(id) on delete cascade,
@@ -95,7 +95,7 @@ begin
 
   insert into public.buzzer_participants (session_id, user_id, display_name)
   values (p_session_id, uid, member_name)
-  on conflict (session_id, user_id) do update
+  on conflict on constraint buzzer_participants_pkey do update
     set display_name = coalesce(excluded.display_name, public.buzzer_participants.display_name),
         updated_at = case
           when coalesce(excluded.display_name, '') is distinct from coalesce(public.buzzer_participants.display_name, '')
@@ -112,6 +112,8 @@ begin
 end;
 $$;
 
+drop function if exists public.buzzer_buzz(uuid, text);
+
 create or replace function public.buzzer_buzz(p_session_id uuid, p_display_name text default null)
 returns table (
   id uuid,
@@ -119,7 +121,7 @@ returns table (
   round_id uuid,
   user_id uuid,
   display_name text,
-  position integer,
+  queue_position integer,
   created_at timestamptz
 )
 language plpgsql
@@ -132,8 +134,8 @@ declare
   s_permissions jsonb;
   current_buzzer public.buzzer_sessions;
   participant public.buzzer_participants;
-  existing_event public.buzzer_events;
-  inserted_event public.buzzer_events;
+  existing_event_id uuid;
+  inserted_event_id uuid;
   next_position integer;
   clean_name text;
 begin
@@ -182,7 +184,7 @@ begin
 
   insert into public.buzzer_participants (session_id, user_id, display_name)
   values (p_session_id, uid, clean_name)
-  on conflict (session_id, user_id) do update
+  on conflict on constraint buzzer_participants_pkey do update
     set display_name = excluded.display_name,
         updated_at = now();
 
@@ -202,35 +204,35 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(p_session_id::text || ':' || current_buzzer.round_id::text, 0));
 
-  select *
-    into existing_event
+  select e.id
+    into existing_event_id
   from public.buzzer_events e
   where e.session_id = p_session_id
     and e.round_id = current_buzzer.round_id
     and e.user_id = uid;
 
-  if found then
+  if existing_event_id is not null then
     return query
-      select e.id, e.session_id, e.round_id, e.user_id, e.display_name, e.position, e.created_at
+      select e.id, e.session_id, e.round_id, e.user_id, e.display_name, e.queue_position, e.created_at
       from public.buzzer_events e
-      where e.id = existing_event.id;
+      where e.id = existing_event_id;
     return;
   end if;
 
-  select coalesce(max(e.position), 0) + 1
+  select coalesce(max(e.queue_position), 0) + 1
     into next_position
   from public.buzzer_events e
   where e.session_id = p_session_id
     and e.round_id = current_buzzer.round_id;
 
-  insert into public.buzzer_events (session_id, round_id, user_id, display_name, position)
+  insert into public.buzzer_events (session_id, round_id, user_id, display_name, queue_position)
   values (p_session_id, current_buzzer.round_id, uid, clean_name, next_position)
-  returning * into inserted_event;
+  returning buzzer_events.id into inserted_event_id;
 
   return query
-    select e.id, e.session_id, e.round_id, e.user_id, e.display_name, e.position, e.created_at
+    select e.id, e.session_id, e.round_id, e.user_id, e.display_name, e.queue_position, e.created_at
     from public.buzzer_events e
-    where e.id = inserted_event.id;
+    where e.id = inserted_event_id;
 end;
 $$;
 
@@ -260,7 +262,7 @@ begin
   from public.buzzer_events e
   where e.session_id = p_session_id
     and e.round_id = current_buzzer.round_id
-    and e.position = 1;
+    and e.queue_position = 1;
 
   update public.buzzer_participants bp
   set paused_next_round = false,
@@ -271,7 +273,7 @@ begin
   if current_buzzer.fairness_mode and winner.user_id is not null then
     insert into public.buzzer_participants (session_id, user_id, display_name, paused_next_round, last_won_round_id)
     values (p_session_id, winner.user_id, winner.display_name, true, current_buzzer.round_id)
-    on conflict (session_id, user_id) do update
+    on conflict on constraint buzzer_participants_pkey do update
       set display_name = excluded.display_name,
           paused_next_round = true,
           last_won_round_id = excluded.last_won_round_id,
@@ -386,7 +388,7 @@ begin
 
   insert into public.buzzer_participants (session_id, user_id, display_name, excluded)
   values (p_session_id, p_user_id, participant_name, p_excluded)
-  on conflict (session_id, user_id) do update
+  on conflict on constraint buzzer_participants_pkey do update
     set display_name = coalesce(excluded.display_name, public.buzzer_participants.display_name),
         excluded = p_excluded,
         updated_at = now()
@@ -403,26 +405,26 @@ begin
     with ranked as (
       select
         be.id,
-        row_number() over (order by be.position, be.created_at, be.id)::integer + 1000000 as new_position
+        row_number() over (order by be.queue_position, be.created_at, be.id)::integer + 1000000 as new_position
       from public.buzzer_events be
       where be.session_id = p_session_id
         and be.round_id = current_buzzer.round_id
     )
     update public.buzzer_events e
-    set position = ranked.new_position
+    set queue_position = ranked.new_position
     from ranked
     where e.id = ranked.id;
 
     with ranked as (
       select
         be.id,
-        row_number() over (order by be.position, be.created_at, be.id)::integer as new_position
+        row_number() over (order by be.queue_position, be.created_at, be.id)::integer as new_position
       from public.buzzer_events be
       where be.session_id = p_session_id
         and be.round_id = current_buzzer.round_id
     )
     update public.buzzer_events e
-    set position = ranked.new_position
+    set queue_position = ranked.new_position
     from ranked
     where e.id = ranked.id;
   end if;

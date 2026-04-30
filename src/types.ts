@@ -155,7 +155,7 @@ export interface BuzzerEvent {
   roundId: string;
   userId: string;
   displayName: string;
-  position: number;
+  queue_position: number;
   createdAt: string;
 }
 

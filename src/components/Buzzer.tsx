@@ -107,7 +107,7 @@ export default function Buzzer({
 
   const winner = events[0] ?? null;
   const studentLeader =
-    !isTeacher && buzzerSession?.silentMode === false ? events.find((event) => event.position === 1) ?? null : null;
+    !isTeacher && buzzerSession?.silentMode === false ? events.find((event) => event.queue_position === 1) ?? null : null;
   const ownEvent = useMemo(
     () => events.find((event) => event.userId === currentUserId) ?? null,
     [currentUserId, events]
@@ -163,7 +163,7 @@ export default function Buzzer({
         .select('*')
         .eq('session_id', sessionId)
         .eq('round_id', nextSession.roundId)
-        .order('position', { ascending: true }),
+        .order('queue_position', { ascending: true }),
       supabase
         .from('buzzer_participants')
         .select('*')
@@ -397,7 +397,7 @@ export default function Buzzer({
                 animate={{ opacity: 1, y: 0 }}
                 className="grid gap-3 sm:grid-cols-3"
               >
-                <Metric label="Position" value={`#${winner.position}`} icon={<Crown className="h-5 w-5" />} />
+                <Metric label="Position" value={`#${winner.queue_position}`} icon={<Crown className="h-5 w-5" />} />
                 <Metric label="Zeitpunkt" value={formatTime(winner.createdAt)} icon={<BellRing className="h-5 w-5" />} />
                 <Metric label="Runde" value={buzzerSession?.roundId.slice(0, 8) || '-'} icon={<RefreshCw className="h-5 w-5" />} />
               </motion.div>
@@ -483,11 +483,11 @@ export default function Buzzer({
                 <div
                   key={event.id}
                   className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border p-3 ${
-                    event.position === 1 ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'
+                    event.queue_position === 1 ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'
                   }`}
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-white">
-                    {event.position}
+                    {event.queue_position}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-bold text-slate-900">{event.displayName}</p>
@@ -575,10 +575,10 @@ export default function Buzzer({
   } else if (buzzerSession?.status === 'locked') {
     studentMessage = 'Der Buzzer ist gerade gesperrt.';
     studentTone = 'warn';
-  } else if (ownEvent?.position === 1) {
+  } else if (ownEvent?.queue_position === 1) {
     studentMessage = 'Du hast gebuzzert.';
     studentTone = 'success';
-  } else if (ownEvent && ownEvent.position > 1) {
+  } else if (ownEvent && ownEvent.queue_position > 1) {
     studentMessage =
       studentLeader && studentLeader.userId !== currentUserId
         ? `Zu spät - ${studentLeader.displayName} war schneller.`
@@ -611,7 +611,7 @@ export default function Buzzer({
           className={`mx-auto flex aspect-square w-full max-w-[21rem] flex-col items-center justify-center rounded-full border-8 text-white shadow-xl transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 ${
             canBuzz
               ? 'border-red-300 bg-red-600 hover:bg-red-700'
-              : ownEvent?.position === 1
+              : ownEvent?.queue_position === 1
                 ? 'border-emerald-200 bg-emerald-600'
                 : 'border-slate-200 bg-slate-500'
           }`}
@@ -637,7 +637,7 @@ export default function Buzzer({
             {studentTone === 'warn' ? <ShieldAlert className="h-5 w-5" /> : null}
             <span>{studentMessage}</span>
           </div>
-          {ownEvent && <p className="mt-2 text-sm font-semibold opacity-80">Deine Position: #{ownEvent.position}</p>}
+          {ownEvent && <p className="mt-2 text-sm font-semibold opacity-80">Deine Position: #{ownEvent.queue_position}</p>}
         </div>
       </div>
     </div>
