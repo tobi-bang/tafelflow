@@ -433,6 +433,69 @@ begin
 end;
 $$;
 
+create or replace function public.buzzer_remove_participant(
+  p_session_id uuid,
+  p_user_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_buzzer public.buzzer_sessions;
+begin
+  if not public.is_session_teacher(p_session_id, auth.uid()) then
+    raise exception 'BUZZER_TEACHER_ONLY';
+  end if;
+
+  insert into public.buzzer_sessions (session_id)
+  values (p_session_id)
+  on conflict on constraint buzzer_sessions_pkey do nothing;
+
+  select bs.*
+    into current_buzzer
+  from public.buzzer_sessions bs
+  where bs.session_id = p_session_id;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_session_id::text || ':' || current_buzzer.round_id::text, 0));
+
+  delete from public.buzzer_events be
+  where be.session_id = p_session_id
+    and be.user_id = p_user_id;
+
+  delete from public.buzzer_participants bp
+  where bp.session_id = p_session_id
+    and bp.user_id = p_user_id;
+
+  with ranked as (
+    select
+      be.id,
+      row_number() over (order by be.queue_position, be.created_at, be.id)::integer + 1000000 as new_position
+    from public.buzzer_events be
+    where be.session_id = p_session_id
+      and be.round_id = current_buzzer.round_id
+  )
+  update public.buzzer_events be
+  set queue_position = ranked.new_position
+  from ranked
+  where be.id = ranked.id;
+
+  with ranked as (
+    select
+      be.id,
+      row_number() over (order by be.queue_position, be.created_at, be.id)::integer as new_position
+    from public.buzzer_events be
+    where be.session_id = p_session_id
+      and be.round_id = current_buzzer.round_id
+  )
+  update public.buzzer_events be
+  set queue_position = ranked.new_position
+  from ranked
+  where be.id = ranked.id;
+end;
+$$;
+
 alter table public.buzzer_sessions enable row level security;
 alter table public.buzzer_events enable row level security;
 alter table public.buzzer_participants enable row level security;
@@ -485,6 +548,7 @@ grant execute on function public.buzzer_reset_round(uuid) to authenticated;
 grant execute on function public.buzzer_clear_all(uuid) to authenticated;
 grant execute on function public.buzzer_set_locked(uuid, boolean) to authenticated;
 grant execute on function public.buzzer_set_participant_excluded(uuid, uuid, boolean) to authenticated;
+grant execute on function public.buzzer_remove_participant(uuid, uuid) to authenticated;
 
 do $$
 begin

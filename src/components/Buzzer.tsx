@@ -10,6 +10,7 @@ import {
   RefreshCw,
   RotateCcw,
   ShieldAlert,
+  Trash2,
   Unlock,
   UserCheck,
   UsersRound,
@@ -178,36 +179,8 @@ export default function Buzzer({
 
     setEvents((eventRows ?? []).map((row) => rowToBuzzerEvent(row as Record<string, unknown>)));
 
-    let nextParticipants = (participantRows ?? []).map((row) => rowToBuzzerParticipant(row as Record<string, unknown>));
-    if (isTeacher) {
-      const { data: memberRows } = await supabase
-        .from('session_members')
-        .select('session_id,user_id,display_name,role')
-        .eq('session_id', sessionId)
-        .eq('role', 'student');
-      const byUser = new Map(nextParticipants.map((participant) => [participant.userId, participant]));
-      for (const member of memberRows ?? []) {
-        const userId = String((member as Record<string, unknown>).user_id ?? '');
-        if (!userId || byUser.has(userId)) continue;
-        byUser.set(userId, {
-          sessionId,
-          userId,
-          displayName:
-            typeof (member as Record<string, unknown>).display_name === 'string'
-              ? String((member as Record<string, unknown>).display_name)
-              : null,
-          excluded: false,
-          pausedNextRound: false,
-          lastWonRoundId: null,
-          updatedAt: '',
-        });
-      }
-      nextParticipants = Array.from(byUser.values()).sort((a, b) =>
-        (a.displayName || 'Anonym').localeCompare(b.displayName || 'Anonym', 'de')
-      );
-    }
-    setParticipants(nextParticipants);
-  }, [isTeacher, sessionId]);
+    setParticipants((participantRows ?? []).map((row) => rowToBuzzerParticipant(row as Record<string, unknown>)));
+  }, [sessionId]);
 
   const ensureAndLoad = useCallback(async () => {
     const { error: ensureError } = await supabase.rpc('ensure_buzzer_session', { p_session_id: sessionId });
@@ -329,6 +302,20 @@ export default function Buzzer({
       p_excluded: excluded,
     });
     if (excludedError) setError(buzzerErrorMessage(excludedError.message));
+    await load();
+    setBusy(null);
+  };
+
+  const removeParticipant = async (participant: BuzzerParticipant) => {
+    const name = participant.displayName || 'Anonym';
+    if (!confirm(`${name} aus dem Buzzer-Tool entfernen? Die aktuelle Warteschlangen-Position wird ebenfalls geloescht.`)) return;
+    setBusy(`remove-${participant.userId}`);
+    setError(null);
+    const { error: removeError } = await supabase.rpc('buzzer_remove_participant', {
+      p_session_id: sessionId,
+      p_user_id: participant.userId,
+    });
+    if (removeError) setError(buzzerErrorMessage(removeError.message));
     await load();
     setBusy(null);
   };
@@ -531,19 +518,30 @@ export default function Buzzer({
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void setExcluded(participant.userId, !participant.excluded)}
-                    disabled={busy === participant.userId}
-                    className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
-                      participant.excluded
-                        ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
-                        : 'border-rose-200 text-rose-700 hover:bg-rose-50'
-                    }`}
-                  >
-                    {participant.excluded ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-                    {participant.excluded ? 'Freigeben' : 'Sperren'}
-                  </button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void setExcluded(participant.userId, !participant.excluded)}
+                      disabled={busy === participant.userId}
+                      className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
+                        participant.excluded
+                          ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                          : 'border-rose-200 text-rose-700 hover:bg-rose-50'
+                      }`}
+                    >
+                      {participant.excluded ? <UserCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                      {participant.excluded ? 'Freigeben' : 'Sperren'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeParticipant(participant)}
+                      disabled={busy === `remove-${participant.userId}`}
+                      className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Entfernen
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
