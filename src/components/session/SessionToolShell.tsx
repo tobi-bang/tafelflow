@@ -14,6 +14,8 @@ interface SessionToolShellProps {
   children: React.ReactNode;
   /** page: scrollbare Werkzeugfläche; canvas: volle Höhe für Tafel/Ideenfläche */
   variant?: Variant;
+  /** Für Werkzeuge mit eigener kompakter Toolbar. */
+  hideHeader?: boolean;
 }
 
 export default function SessionToolShell({
@@ -23,6 +25,7 @@ export default function SessionToolShell({
   actions,
   children,
   variant = 'page',
+  hideHeader = false,
 }: SessionToolShellProps) {
   const meta = SESSION_TOOL_META[tabId];
   const description = role === 'teacher' ? meta.descriptionTeacher : meta.descriptionStudent;
@@ -47,31 +50,33 @@ export default function SessionToolShell({
 
   return (
     <div className={variant === 'canvas' ? 'flex flex-col h-full min-h-0 bg-slate-50 min-w-0' : 'flex flex-col min-h-0 h-full'}>
-      <header
-        className={`shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur-sm ${headerX} ${headerPad} ${
-          variant === 'canvas' ? 'shadow-sm z-10' : ''
-        }`}
-      >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className={`font-bold text-slate-900 leading-tight ${titleClass}`}>{meta.title}</h2>
-            <p
-              className={`mt-1 text-slate-600 leading-snug max-w-3xl ${
-                presentationMode ? 'text-sm sm:text-base' : 'text-sm'
-              } ${
-                variant === 'canvas'
-                  ? 'hidden md:block md:line-clamp-2 lg:line-clamp-none'
-                  : ''
-              }`}
-            >
-              {description}
-            </p>
+      {!hideHeader && (
+        <header
+          className={`shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur-sm ${headerX} ${headerPad} ${
+            variant === 'canvas' ? 'shadow-sm z-10' : ''
+          }`}
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className={`font-bold text-slate-900 leading-tight ${titleClass}`}>{meta.title}</h2>
+              <p
+                className={`mt-1 text-slate-600 leading-snug max-w-3xl ${
+                  presentationMode ? 'text-sm sm:text-base' : 'text-sm'
+                } ${
+                  variant === 'canvas'
+                    ? 'hidden md:block md:line-clamp-2 lg:line-clamp-none'
+                    : ''
+                }`}
+              >
+                {description}
+              </p>
+            </div>
+            {actions ? (
+              <div className="flex flex-wrap gap-2 shrink-0 items-center justify-end">{actions}</div>
+            ) : null}
           </div>
-          {actions ? (
-            <div className="flex flex-wrap gap-2 shrink-0 items-center justify-end">{actions}</div>
-          ) : null}
-        </div>
-      </header>
+        </header>
+      )}
 
       <div
         className={
