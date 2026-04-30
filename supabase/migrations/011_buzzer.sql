@@ -105,8 +105,8 @@ begin
 
   select *
     into result
-  from public.buzzer_sessions
-  where session_id = p_session_id;
+  from public.buzzer_sessions bs
+  where bs.session_id = p_session_id;
 
   return result;
 end;
@@ -141,10 +141,10 @@ begin
     raise exception 'BUZZER_NOT_AUTHENTICATED';
   end if;
 
-  select status, permissions
+  select s.status, s.permissions
     into s_status, s_permissions
-  from public.sessions
-  where id = p_session_id;
+  from public.sessions s
+  where s.id = p_session_id;
 
   if not found then
     raise exception 'BUZZER_SESSION_NOT_FOUND';
@@ -188,9 +188,9 @@ begin
 
   select *
     into participant
-  from public.buzzer_participants
-  where session_id = p_session_id
-    and user_id = uid;
+  from public.buzzer_participants bp
+  where bp.session_id = p_session_id
+    and bp.user_id = uid;
 
   if participant.excluded then
     raise exception 'BUZZER_EXCLUDED';
@@ -262,11 +262,11 @@ begin
     and e.round_id = current_buzzer.round_id
     and e.position = 1;
 
-  update public.buzzer_participants
+  update public.buzzer_participants bp
   set paused_next_round = false,
       updated_at = now()
-  where session_id = p_session_id
-    and paused_next_round = true;
+  where bp.session_id = p_session_id
+    and bp.paused_next_round = true;
 
   if current_buzzer.fairness_mode and winner.user_id is not null then
     insert into public.buzzer_participants (session_id, user_id, display_name, paused_next_round, last_won_round_id)
@@ -278,11 +278,11 @@ begin
           updated_at = now();
   end if;
 
-  update public.buzzer_sessions
+  update public.buzzer_sessions bs
   set round_id = gen_random_uuid(),
       status = 'open',
       updated_at = now()
-  where session_id = p_session_id
+  where bs.session_id = p_session_id
   returning * into result;
 
   return result;
@@ -309,21 +309,21 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(p_session_id::text || ':' || current_buzzer.round_id::text, 0));
 
-  delete from public.buzzer_events
-  where session_id = p_session_id;
+  delete from public.buzzer_events be
+  where be.session_id = p_session_id;
 
-  update public.buzzer_participants
+  update public.buzzer_participants bp
   set excluded = false,
       paused_next_round = false,
       last_won_round_id = null,
       updated_at = now()
-  where session_id = p_session_id;
+  where bp.session_id = p_session_id;
 
-  update public.buzzer_sessions
+  update public.buzzer_sessions bs
   set round_id = gen_random_uuid(),
       status = 'open',
       updated_at = now()
-  where session_id = p_session_id
+  where bs.session_id = p_session_id
   returning * into result;
 
   return result;
@@ -345,10 +345,10 @@ begin
 
   perform public.ensure_buzzer_session(p_session_id);
 
-  update public.buzzer_sessions
+  update public.buzzer_sessions bs
   set status = case when p_locked then 'locked' else 'open' end,
       updated_at = now()
-  where session_id = p_session_id
+  where bs.session_id = p_session_id
   returning * into result;
 
   return result;
@@ -395,18 +395,18 @@ begin
   if p_excluded then
     perform pg_advisory_xact_lock(hashtextextended(p_session_id::text || ':' || current_buzzer.round_id::text, 0));
 
-    delete from public.buzzer_events
-    where session_id = p_session_id
-      and round_id = current_buzzer.round_id
-      and user_id = p_user_id;
+    delete from public.buzzer_events be
+    where be.session_id = p_session_id
+      and be.round_id = current_buzzer.round_id
+      and be.user_id = p_user_id;
 
     with ranked as (
       select
-        id,
-        row_number() over (order by position, created_at, id)::integer + 1000000 as new_position
-      from public.buzzer_events
-      where session_id = p_session_id
-        and round_id = current_buzzer.round_id
+        be.id,
+        row_number() over (order by be.position, be.created_at, be.id)::integer + 1000000 as new_position
+      from public.buzzer_events be
+      where be.session_id = p_session_id
+        and be.round_id = current_buzzer.round_id
     )
     update public.buzzer_events e
     set position = ranked.new_position
@@ -415,11 +415,11 @@ begin
 
     with ranked as (
       select
-        id,
-        row_number() over (order by position, created_at, id)::integer as new_position
-      from public.buzzer_events
-      where session_id = p_session_id
-        and round_id = current_buzzer.round_id
+        be.id,
+        row_number() over (order by be.position, be.created_at, be.id)::integer as new_position
+      from public.buzzer_events be
+      where be.session_id = p_session_id
+        and be.round_id = current_buzzer.round_id
     )
     update public.buzzer_events e
     set position = ranked.new_position
@@ -439,22 +439,22 @@ drop policy if exists "buzzer_sessions_select_member" on public.buzzer_sessions;
 create policy "buzzer_sessions_select_member"
   on public.buzzer_sessions for select
   to authenticated
-  using (public.is_session_member(session_id, auth.uid()));
+  using (public.is_session_member(buzzer_sessions.session_id, auth.uid()));
 
 drop policy if exists "buzzer_sessions_update_teacher" on public.buzzer_sessions;
 create policy "buzzer_sessions_update_teacher"
   on public.buzzer_sessions for update
   to authenticated
-  using (public.is_session_teacher(session_id, auth.uid()))
-  with check (public.is_session_teacher(session_id, auth.uid()));
+  using (public.is_session_teacher(buzzer_sessions.session_id, auth.uid()))
+  with check (public.is_session_teacher(buzzer_sessions.session_id, auth.uid()));
 
 drop policy if exists "buzzer_events_select_teacher_or_own" on public.buzzer_events;
 create policy "buzzer_events_select_teacher_or_own"
   on public.buzzer_events for select
   to authenticated
   using (
-    user_id = auth.uid()
-    or public.is_session_teacher(session_id, auth.uid())
+    buzzer_events.user_id = auth.uid()
+    or public.is_session_teacher(buzzer_events.session_id, auth.uid())
     or exists (
       select 1
       from public.buzzer_sessions bs
@@ -469,8 +469,8 @@ create policy "buzzer_participants_select_teacher_or_own"
   on public.buzzer_participants for select
   to authenticated
   using (
-    user_id = auth.uid()
-    or public.is_session_teacher(session_id, auth.uid())
+    buzzer_participants.user_id = auth.uid()
+    or public.is_session_teacher(buzzer_participants.session_id, auth.uid())
   );
 
 grant select, insert, update, delete on public.buzzer_sessions to authenticated;
