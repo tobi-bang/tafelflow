@@ -810,6 +810,18 @@ export default function ExamTimerTool() {
           </div>
 
           <div className="scrollbar-none flex max-w-full items-center gap-2 overflow-x-auto">
+            {state.mode === 'split' && (splitReady || state.syncControlEnabled) && (
+              <HeaderSyncControl
+                state={state}
+                now={now}
+                splitReady={splitReady}
+                onToggle={setSyncControlEnabled}
+                onStartBoth={startBoth}
+                onPauseBoth={pauseBoth}
+                onResumeBoth={resumeBoth}
+                onStopBoth={stopBoth}
+              />
+            )}
             <button
               type="button"
               onClick={() => setExamMode(state.mode === 'single' ? 'split' : 'single')}
@@ -862,20 +874,6 @@ export default function ExamTimerTool() {
           </div>
         </div>
       </header>
-
-      {state.mode === 'split' && (
-        <SyncControlPanel
-          state={state}
-          now={now}
-          boardMode={state.boardMode}
-          splitReady={splitReady}
-          onToggle={setSyncControlEnabled}
-          onStartBoth={startBoth}
-          onPauseBoth={pauseBoth}
-          onResumeBoth={resumeBoth}
-          onStopBoth={stopBoth}
-        />
-      )}
 
       <main className={`mx-auto max-w-[112rem] ${state.boardMode ? 'p-2 sm:p-3' : 'p-3 sm:p-5'}`}>
         {!state.boardMode ? (
@@ -944,17 +942,13 @@ function headerButtonClass(highContrast: boolean, active: boolean): string {
   }`;
 }
 
-/** Splitscreen + Board: schwebende Sync-Steuerung (FAB + Popover, Auto-Close nach Inaktivität). */
-const BOARD_SYNC_IDLE_MS = 5000;
+/** Splitscreen: Sync-Popover in der Topbar (Auto-Close nach Inaktivität). */
+const SYNC_POPOVER_IDLE_MS = 5000;
 
-function BoardModeSyncFloating({
+function HeaderSyncControl({
   state,
+  now,
   splitReady,
-  enabled,
-  canStartBoth,
-  canPauseBoth,
-  canResumeBoth,
-  canStopBoth,
   onToggle,
   onStartBoth,
   onPauseBoth,
@@ -962,12 +956,8 @@ function BoardModeSyncFloating({
   onStopBoth,
 }: {
   state: SplitScreenSession;
+  now: number;
   splitReady: boolean;
-  enabled: boolean;
-  canStartBoth: boolean;
-  canPauseBoth: boolean;
-  canResumeBoth: boolean;
-  canStopBoth: boolean;
   onToggle: (enabled: boolean) => void;
   onStartBoth: () => void;
   onPauseBoth: () => void;
@@ -975,13 +965,18 @@ function BoardModeSyncFloating({
   onStopBoth: () => void;
 }) {
   const highContrast = state.highContrast;
+  const enabled = state.syncControlEnabled;
+  const canStartBoth = splitReady && canSyncStartSession(state.sessions.A) && canSyncStartSession(state.sessions.B);
+  const canPauseBoth = canSyncPauseSession(state.sessions.A, now) || canSyncPauseSession(state.sessions.B, now);
+  const canResumeBoth = canSyncResumeSession(state.sessions.A) || canSyncResumeSession(state.sessions.B);
+  const canStopBoth = canSyncStopSession(state.sessions.A) || canSyncStopSession(state.sessions.B);
+
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-  const fabRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const idleTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const prevSyncEnabledRef = useRef<boolean | null>(null);
 
-  /** Beim Aktivieren der Kopplung kurz das Panel zeigen (ohne Mount mit bereits aktiv). */
   useEffect(() => {
     if (prevSyncEnabledRef.current === null) {
       prevSyncEnabledRef.current = enabled;
@@ -998,7 +993,7 @@ function BoardModeSyncFloating({
     idleTimerRef.current = window.setTimeout(() => {
       setOpen(false);
       idleTimerRef.current = null;
-    }, BOARD_SYNC_IDLE_MS);
+    }, SYNC_POPOVER_IDLE_MS);
   }, []);
 
   useEffect(() => {
@@ -1031,7 +1026,7 @@ function BoardModeSyncFloating({
     if (!open) return;
     const onPointerDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (fabRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      if (triggerRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown, true);
@@ -1042,69 +1037,74 @@ function BoardModeSyncFloating({
     if (open) scheduleAutoClose();
   }, [open, scheduleAutoClose]);
 
-  const fabClass = highContrast
-    ? 'border border-white/25 bg-zinc-900/95 text-white shadow-2xl backdrop-blur-md hover:bg-zinc-800'
-    : 'border border-slate-200 bg-white/95 text-violet-800 shadow-2xl backdrop-blur-md hover:bg-violet-50';
-
   const panelClass = highContrast
     ? 'border border-white/20 bg-zinc-950/98 text-white shadow-2xl backdrop-blur-md'
     : 'border border-slate-200 bg-white/98 text-slate-900 shadow-2xl backdrop-blur-md';
 
   const muted = highContrast ? 'text-violet-100/85' : 'text-slate-600';
 
+  const triggerBase = headerButtonClass(highContrast, open);
+  const triggerActive =
+    enabled && !open
+      ? highContrast
+        ? ' border-violet-400/50 bg-white/10 ring-1 ring-violet-400/50'
+        : ' border-violet-300 bg-violet-50 ring-1 ring-violet-400/60'
+      : '';
+
   return (
-    <>
+    <div className="relative shrink-0">
       <button
-        ref={fabRef}
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
-        aria-controls="exam-sync-board-panel"
-        title={open ? 'Sync-Steuerung schließen' : 'Synchronsteuerung öffnen'}
+        aria-controls="exam-sync-header-panel"
+        title={enabled ? 'Synchronsteuerung aktiv · öffnen' : 'Synchronsteuerung'}
         aria-label={open ? 'Synchronsteuerung schließen' : 'Synchronsteuerung öffnen'}
         onClick={() => setOpen((v) => !v)}
-        className={`fixed z-[35] flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 ${fabClass} ${
-          enabled ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent' : ''
-        } bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-[max(0.75rem,env(safe-area-inset-right,0px))] sm:bottom-6 sm:right-6`}
+        className={`${triggerBase}${triggerActive} ${enabled ? 'relative' : ''}`}
       >
-        <span className="relative flex items-center justify-center">
-          {enabled ? <Link2 className="h-6 w-6" aria-hidden /> : <Link2Off className="h-6 w-6" aria-hidden />}
+        <span className="relative inline-flex shrink-0 items-center justify-center">
+          {enabled ? <Link2 className="h-4 w-4" aria-hidden /> : <Link2Off className="h-4 w-4" aria-hidden />}
           {enabled && (
             <span
-              className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-emerald-400 shadow"
-              title="Sync aktiv"
+              className={`absolute -right-1 -top-1 h-2 w-2 rounded-full border shadow ${
+                highContrast ? 'border-zinc-900 bg-emerald-400' : 'border-white bg-emerald-500'
+              }`}
+              title="Synchronsteuerung aktiv"
               aria-hidden
             />
           )}
         </span>
+        <span className="max-w-[5.5rem] truncate sm:max-w-none">Sync</span>
       </button>
 
       {open && (
         <>
           <button
             type="button"
-            className="fixed inset-0 z-[33] bg-slate-950/35 backdrop-blur-[1px] sm:hidden"
+            className="fixed inset-0 z-[34] bg-slate-950/30 backdrop-blur-[1px] sm:hidden"
             aria-label="Schließen"
             onClick={() => setOpen(false)}
           />
           <div
             ref={panelRef}
-            id="exam-sync-board-panel"
+            id="exam-sync-header-panel"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="exam-sync-board-title"
+            aria-labelledby="exam-sync-header-title"
             onPointerDownCapture={bumpActivity}
-            className={`fixed z-[36] flex max-h-[min(52dvh,24rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto overscroll-contain rounded-2xl p-3 sm:max-h-[min(58dvh,28rem)] sm:p-4 ${panelClass} bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] right-[max(0.75rem,env(safe-area-inset-right,0px))] sm:bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:right-6`}
+            className={`fixed z-[40] flex max-h-[min(72dvh,28rem)] w-[min(calc(100vw-1rem),22rem)] flex-col overflow-y-auto overscroll-contain rounded-2xl p-3 sm:p-4 ${panelClass} left-2 top-[calc(3.75rem+env(safe-area-inset-top,0px))] sm:left-auto sm:right-4 sm:top-[calc(3.5rem+env(safe-area-inset-top,0px))]`}
           >
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p
-                  id="exam-sync-board-title"
+                  id="exam-sync-header-title"
                   className={`text-xs font-black uppercase tracking-wide ${highContrast ? 'text-violet-200' : 'text-violet-700'}`}
                 >
                   Synchronsteuerung
                 </p>
                 <p className={`text-sm font-semibold ${muted}`}>
-                  {enabled ? 'Sync aktiv · beide Prüfungen gekoppelt' : 'Getrennt · bei Bedarf koppeln'}
+                  {enabled ? 'Aktiv · beide Prüfungen gekoppelt' : 'Getrennt · bei Bedarf koppeln'}
                 </p>
               </div>
               <button
@@ -1118,6 +1118,10 @@ function BoardModeSyncFloating({
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            <p className={`mb-3 text-xs leading-snug ${muted}`}>
+              Startet, pausiert oder setzt beide Prüfungen gleichzeitig fort. Die einzelnen Prüfungszeiten bleiben unabhängig.
+            </p>
 
             <button
               type="button"
@@ -1175,138 +1179,7 @@ function BoardModeSyncFloating({
           </div>
         </>
       )}
-    </>
-  );
-}
-
-function SyncControlPanel({
-  state,
-  now,
-  boardMode,
-  splitReady,
-  onToggle,
-  onStartBoth,
-  onPauseBoth,
-  onResumeBoth,
-  onStopBoth,
-}: {
-  state: SplitScreenSession;
-  now: number;
-  boardMode: boolean;
-  splitReady: boolean;
-  onToggle: (enabled: boolean) => void;
-  onStartBoth: () => void;
-  onPauseBoth: () => void;
-  onResumeBoth: () => void;
-  onStopBoth: () => void;
-}) {
-  const highContrast = state.highContrast;
-  const enabled = state.syncControlEnabled;
-  const canStartBoth = splitReady && canSyncStartSession(state.sessions.A) && canSyncStartSession(state.sessions.B);
-  const canPauseBoth = canSyncPauseSession(state.sessions.A, now) || canSyncPauseSession(state.sessions.B, now);
-  const canResumeBoth = canSyncResumeSession(state.sessions.A) || canSyncResumeSession(state.sessions.B);
-  const canStopBoth = canSyncStopSession(state.sessions.A) || canSyncStopSession(state.sessions.B);
-
-  if (boardMode) {
-    return (
-      <BoardModeSyncFloating
-        state={state}
-        splitReady={splitReady}
-        enabled={enabled}
-        canStartBoth={canStartBoth}
-        canPauseBoth={canPauseBoth}
-        canResumeBoth={canResumeBoth}
-        canStopBoth={canStopBoth}
-        onToggle={onToggle}
-        onStartBoth={onStartBoth}
-        onPauseBoth={onPauseBoth}
-        onResumeBoth={onResumeBoth}
-        onStopBoth={onStopBoth}
-      />
-    );
-  }
-
-  const shellClass = highContrast
-    ? 'border-violet-300/30 bg-violet-300/10 text-white'
-    : 'border-violet-200 bg-violet-50 text-slate-950';
-  const mutedText = highContrast ? 'text-violet-100/80' : 'text-slate-600';
-
-  return (
-    <section className="mx-auto max-w-[112rem] px-3 pt-3 sm:px-5">
-      <div className={`rounded-2xl border p-3 shadow-sm sm:p-4 ${shellClass}`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-xl ${enabled ? 'bg-violet-600 text-white' : highContrast ? 'bg-white/10 text-white' : 'bg-white text-violet-700'}`}>
-                {enabled ? <Link2 className="h-5 w-5" /> : <Link2Off className="h-5 w-5" />}
-              </span>
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide">Synchronsteuerung</p>
-                <p className={`text-sm font-semibold ${mutedText}`}>
-                  {enabled ? 'Synchronsteuerung aktiv' : 'Prüfungen werden getrennt gesteuert'}
-                </p>
-              </div>
-              {enabled && <span className="rounded-full bg-violet-600 px-3 py-1 text-xs font-black text-white">aktiv</span>}
-            </div>
-            <p className={`mt-2 max-w-3xl text-sm ${mutedText}`}>
-              Startet, pausiert oder setzt beide Prüfungen gleichzeitig fort. Die einzelnen Prüfungszeiten bleiben unabhängig.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            disabled={!splitReady}
-            onClick={() => onToggle(!enabled)}
-            className={`inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              enabled
-                ? 'bg-violet-700 text-white hover:bg-violet-800'
-                : highContrast
-                  ? 'border border-white/15 bg-white/10 text-white hover:bg-white/15'
-                  : 'border border-violet-200 bg-white text-violet-800 hover:bg-violet-100'
-            }`}
-          >
-            {enabled ? <Link2 className="h-5 w-5" /> : <Link2Off className="h-5 w-5" />}
-            Synchronsteuerung aktivieren
-          </button>
-        </div>
-
-        {!splitReady && (
-          <p className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${highContrast ? 'border-white/10 bg-white/5 text-violet-100' : 'border-violet-200 bg-white/70 text-violet-900'}`}>
-            Synchronsteuerung ist verfügbar, sobald Prüfung A und Prüfung B übernommen und fehlerfrei eingerichtet sind.
-          </p>
-        )}
-
-        {state.syncNotice && (
-          <p className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${highContrast ? 'border-white/10 bg-zinc-950/60 text-violet-100' : 'border-violet-200 bg-white text-violet-900'}`} role="status">
-            {state.syncNotice}
-          </p>
-        )}
-
-        {enabled && (
-          <div className={`mt-3 border-t pt-3 ${highContrast ? 'border-white/10' : 'border-violet-200'}`}>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-black">Synchronsteuerung</h2>
-              <button
-                type="button"
-                onClick={() => onToggle(false)}
-                className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black ${highContrast ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-white text-violet-800 hover:bg-violet-100'}`}
-              >
-                <Link2Off className="h-4 w-4" />
-                Synchronsteuerung lösen
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <SyncActionButton label="Beide starten" icon={<Play className="h-5 w-5" />} onClick={onStartBoth} disabled={!canStartBoth} tone="primary" />
-              <SyncActionButton label="Beide pausieren" icon={<Pause className="h-5 w-5" />} onClick={onPauseBoth} disabled={!canPauseBoth} tone="warning" />
-              <SyncActionButton label="Beide fortsetzen" icon={<Play className="h-5 w-5" />} onClick={onResumeBoth} disabled={!canResumeBoth} tone="success" />
-              <SyncActionButton label="Beide stoppen" icon={<Square className="h-5 w-5" />} onClick={onStopBoth} disabled={!canStopBoth} tone="danger" />
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
+    </div>
   );
 }
 
