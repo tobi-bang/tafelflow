@@ -52,6 +52,7 @@ export interface BreakSection {
   sourceSectionId: string;
 }
 
+/** Zeitfenster: Vorbereitung, Prüfungsteil oder Pause danach (`break`). Pause ↔ Prüfungsteil über `sourceSectionId`. */
 export interface ExamSegment {
   id: string;
   kind: ExamSegmentKind;

@@ -250,6 +250,20 @@ export function resumeSection(session: ExamSession, now = Date.now()): ExamSessi
   });
 }
 
+/**
+ * Beendet eine laufende Pause automatisch, sobald die geplante Pausenzeit erreicht ist
+ * (kein Überzugs-Countdown wie bei Prüfungsteilen).
+ */
+export function autoFinishElapsedBreak(session: ExamSession, now = Date.now()): ExamSession {
+  const activeId = session.timer.activeSegmentId;
+  if (!activeId || session.timer.status !== 'running') return session;
+  const active = buildExamSegments(session).find((s) => s.id === activeId);
+  if (!active || active.kind !== 'break') return session;
+  const remaining = calculateCurrentRemainingTime(session, now);
+  if (remaining == null || remaining > 0) return session;
+  return finishSection(session, now);
+}
+
 export function finishSection(session: ExamSession, now = Date.now()): ExamSession {
   const activeId = session.timer.activeSegmentId;
   if (!activeId) return session;

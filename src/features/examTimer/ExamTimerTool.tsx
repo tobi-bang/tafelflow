@@ -33,6 +33,7 @@ import type { LucideIcon } from 'lucide-react';
 
 import {
   EXAM_TIMER_WARNING_MS,
+  autoFinishElapsedBreak,
   buildExamSegments,
   calculateActiveDueTime,
   calculateCurrentRemainingTime,
@@ -43,6 +44,7 @@ import {
   finishExam,
   finishSection,
   getActiveSegment,
+  getProgress,
   getOrderedExamSections,
   getProjectedTotalEnd,
   pauseSection,
@@ -62,6 +64,7 @@ import type {
   ExamGeneralData,
   ExamIconName,
   ExamPaneId,
+  ExamSegment,
   ExamSection,
   ExamSetupStep,
   ExamSession,
@@ -382,17 +385,26 @@ function formatTotalMinutes(minutes: number): string {
   return `${hours} Std. ${rest} Min.`;
 }
 
-function statusText(status: ReturnType<typeof deriveSessionStatus>, activeKind?: string): string {
+function statusText(
+  status: ReturnType<typeof deriveSessionStatus>,
+  activeKind?: string,
+  nextPending?: ExamSegment | null,
+): string {
   if (status === 'finished') return 'Beendet';
   if (status === 'paused') return 'Pausiert';
   if (status === 'overtime') return 'Überzogen';
-  if (status === 'between') return 'Abschnitt beendet';
+  if (status === 'between' || status === 'ready') {
+    if (nextPending?.kind === 'break') return 'Nächste: Pause';
+    if (nextPending?.kind === 'preparation') return 'Nächste: Vorbereitung';
+    if (nextPending?.kind === 'exam') return 'Nächster Prüfungsteil';
+    return 'Abschnitt beendet';
+  }
   if (status === 'running') {
     if (activeKind === 'preparation') return 'Vorbereitung';
-    if (activeKind === 'break') return 'Pause';
+    if (activeKind === 'break') return 'Pause läuft';
     return 'Prüfungsteil';
   }
-  return 'Vorbereitung';
+  return 'Bereit';
 }
 
 function scheduleStatusClass(status: ScheduleRow['status']): string {
@@ -441,6 +453,17 @@ export default function ExamTimerTool() {
       window.removeEventListener('focus', onVisibility);
     };
   }, []);
+
+  /** Laufende Pausen beenden automatisch, wenn die Pausenzeit abgelaufen ist (ohne Überzug). */
+  useEffect(() => {
+    setState((prev) => {
+      const t = Date.now();
+      const nextA = autoFinishElapsedBreak(prev.sessions.A, t);
+      const nextB = autoFinishElapsedBreak(prev.sessions.B, t);
+      if (nextA === prev.sessions.A && nextB === prev.sessions.B) return prev;
+      return { ...prev, sessions: { A: nextA, B: nextB } };
+    });
+  }, [now]);
 
   useEffect(() => {
     try {
@@ -2080,13 +2103,20 @@ function CompactControls({
         <button
           type="button"
           onClick={() => {
-            if (!confirm('Aktuellen Abschnitt beenden? Der nächste Abschnitt startet nicht automatisch.')) return;
+            if (
+              !confirm(
+                active.kind === 'break'
+                  ? 'Pause jetzt beenden? Der nächste Prüfungsteil startet nicht automatisch.'
+                  : 'Aktuellen Abschnitt beenden? Der nächste Abschnitt startet nicht automatisch.',
+              )
+            )
+              return;
             onChange((prev) => finishSection(prev, now));
           }}
           className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 sm:flex-none"
         >
           <Square className="h-4 w-4" />
-          Abschnitt beenden
+          {active.kind === 'break' ? 'Pause beenden' : 'Stop / Abschnitt beenden'}
         </button>
       )}
 
@@ -2519,18 +2549,38 @@ function ExamBoardDisplay({
   highContrast: boolean;
 }) {
   const activeSegment = getActiveSegment(session);
+  const nextPending =
+    session.timer.status !== 'finished' && !activeSegment ? findNextPendingSegment(session, { includeBreaks: true }) : null;
+  const nextAfterPending =
+    nextPending && session.timer.status !== 'finished'
+      ? (() => {
+          const segs = buildExamSegments(session);
+          const idx = segs.findIndex((s) => s.id === nextPending.id);
+          return segs.slice(idx + 1).find((s) => (getProgress(session, s.id)?.status ?? 'pending') === 'pending') ?? null;
+        })()
+      : null;
   const remaining = calculateCurrentRemainingTime(session, now);
   const overtime = calculateOvertime(session, now);
   const schedule = useMemo(() => calculateProjectedSchedule(session, now), [session, now]);
   const due = calculateActiveDueTime(session, now);
   const projectedEnd = getProjectedTotalEnd(session, now);
-  const nextRow = schedule.find((row) => row.status === 'wartet');
-  const displayedDue = due ?? nextRow?.projectedEnd ?? null;
+  const scheduleNextWaiting = schedule.find((row) => row.status === 'wartet');
+  const scheduleNextPendingRow = nextPending ? schedule.find((row) => row.segment.id === nextPending.id) ?? null : null;
+  const displayedDue = due ?? scheduleNextPendingRow?.projectedEnd ?? scheduleNextWaiting?.projectedEnd ?? null;
   const status = deriveSessionStatus(session, now);
-  const warning = Boolean(remaining != null && remaining > 0 && remaining <= EXAM_TIMER_WARNING_MS && session.timer.status === 'running');
-  const displayMs = overtime > 0 ? overtime : remaining;
-  const title = activeSegment?.title ?? (session.timer.status === 'finished' ? 'Prüfung beendet' : nextRow?.segment.title ?? 'Bereit zum Start');
-  const statusLabel = statusText(status, activeSegment?.kind);
+  const warning = Boolean(
+    activeSegment &&
+      remaining != null &&
+      remaining > 0 &&
+      remaining <= EXAM_TIMER_WARNING_MS &&
+      session.timer.status === 'running',
+  );
+  const plannedIdleMs =
+    !activeSegment && session.timer.status !== 'finished' && nextPending ? Math.max(0, nextPending.durationMinutes * 60_000) : null;
+  const displayMs = overtime > 0 ? overtime : activeSegment ? remaining : plannedIdleMs;
+  const title =
+    activeSegment?.title ?? (session.timer.status === 'finished' ? 'Prüfung beendet' : nextPending?.title ?? 'Bereit zum Start');
+  const statusLabel = statusText(status, activeSegment?.kind, nextPending);
   const timerTone = overtime > 0 ? 'text-rose-600' : warning ? 'text-amber-500' : highContrast ? 'text-white' : 'text-slate-950';
   const shellClass = highContrast
     ? 'bg-zinc-950 text-white'
@@ -2556,6 +2606,11 @@ function ExamBoardDisplay({
           <h2 className={`${boardMode ? 'text-3xl sm:text-5xl xl:text-6xl' : 'text-2xl sm:text-4xl'} mt-2 max-w-5xl text-pretty font-black leading-tight`}>
             {title}
           </h2>
+          {!activeSegment && session.timer.status !== 'finished' && nextPending?.kind === 'break' && (
+            <p className={`mt-2 max-w-4xl text-pretty text-base font-semibold sm:text-lg ${highContrast ? 'text-amber-200' : 'text-amber-900'}`}>
+              Pause steht als eigener Abschnitt an — bitte „Pause starten“. Danach: {nextAfterPending?.title ?? 'nächster Prüfungsteil'} (startet nicht automatisch).
+            </p>
+          )}
           {activeSegment?.description && !boardMode && (
             <p className={`mt-2 max-w-3xl text-sm sm:text-base ${highContrast ? 'text-zinc-300' : 'text-slate-600'}`}>{activeSegment.description}</p>
           )}
@@ -2568,7 +2623,7 @@ function ExamBoardDisplay({
 
       <div className="flex min-h-0 flex-1 flex-col justify-center py-5 text-center">
         <p className={`mb-2 text-sm font-bold uppercase tracking-[0.2em] ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>
-          {overtime > 0 ? 'Überziehungszeit' : 'Verbleibende Zeit'}
+          {overtime > 0 ? 'Überziehungszeit' : activeSegment ? 'Verbleibende Zeit' : nextPending ? 'Geplante Dauer (noch nicht gestartet)' : 'Verbleibende Zeit'}
         </p>
         <div
           className={`font-mono font-black leading-none tabular-nums tracking-normal ${timerTone} ${
@@ -2585,8 +2640,14 @@ function ExamBoardDisplay({
         <InfoTile label="Gesamt-Ende" value={formatTime(projectedEnd)} highContrast={highContrast} />
         <InfoTile label="Geplanter Start" value={`${formatDate(session.general.examDate)} · ${session.general.plannedStartTime || '—'}`} highContrast={highContrast} />
         <InfoTile
-          label="Nächster Abschnitt"
-          value={nextRow ? `${nextRow.segment.title} · ${formatTime(nextRow.projectedStart)}-${formatTime(nextRow.projectedEnd)}` : '—'}
+          label={nextPending?.kind === 'break' ? 'Nächste Pause' : 'Nächster Abschnitt'}
+          value={
+            nextPending
+              ? `${nextPending.title} · ${formatTotalMinutes(nextPending.durationMinutes)}${
+                  nextAfterPending ? ` — danach: ${nextAfterPending.title}` : ''
+                } · geplant ${formatTime(scheduleNextPendingRow?.projectedStart ?? null)}–${formatTime(scheduleNextPendingRow?.projectedEnd ?? null)}`
+              : '—'
+          }
           highContrast={highContrast}
         />
       </div>
