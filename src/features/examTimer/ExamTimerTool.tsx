@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import {
   Square,
   TimerReset,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -866,6 +867,7 @@ export default function ExamTimerTool() {
         <SyncControlPanel
           state={state}
           now={now}
+          boardMode={state.boardMode}
           splitReady={splitReady}
           onToggle={setSyncControlEnabled}
           onStartBoth={startBoth}
@@ -942,9 +944,245 @@ function headerButtonClass(highContrast: boolean, active: boolean): string {
   }`;
 }
 
+/** Splitscreen + Board: schwebende Sync-Steuerung (FAB + Popover, Auto-Close nach Inaktivität). */
+const BOARD_SYNC_IDLE_MS = 5000;
+
+function BoardModeSyncFloating({
+  state,
+  splitReady,
+  enabled,
+  canStartBoth,
+  canPauseBoth,
+  canResumeBoth,
+  canStopBoth,
+  onToggle,
+  onStartBoth,
+  onPauseBoth,
+  onResumeBoth,
+  onStopBoth,
+}: {
+  state: SplitScreenSession;
+  splitReady: boolean;
+  enabled: boolean;
+  canStartBoth: boolean;
+  canPauseBoth: boolean;
+  canResumeBoth: boolean;
+  canStopBoth: boolean;
+  onToggle: (enabled: boolean) => void;
+  onStartBoth: () => void;
+  onPauseBoth: () => void;
+  onResumeBoth: () => void;
+  onStopBoth: () => void;
+}) {
+  const highContrast = state.highContrast;
+  const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const fabRef = useRef<HTMLButtonElement>(null);
+  const idleTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const prevSyncEnabledRef = useRef<boolean | null>(null);
+
+  /** Beim Aktivieren der Kopplung kurz das Panel zeigen (ohne Mount mit bereits aktiv). */
+  useEffect(() => {
+    if (prevSyncEnabledRef.current === null) {
+      prevSyncEnabledRef.current = enabled;
+      return;
+    }
+    if (enabled && !prevSyncEnabledRef.current) {
+      setOpen(true);
+    }
+    prevSyncEnabledRef.current = enabled;
+  }, [enabled]);
+
+  const scheduleAutoClose = useCallback(() => {
+    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      idleTimerRef.current = null;
+    }, BOARD_SYNC_IDLE_MS);
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      return;
+    }
+    scheduleAutoClose();
+    return () => {
+      if (idleTimerRef.current) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+  }, [open, scheduleAutoClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (fabRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [open]);
+
+  const bumpActivity = useCallback(() => {
+    if (open) scheduleAutoClose();
+  }, [open, scheduleAutoClose]);
+
+  const fabClass = highContrast
+    ? 'border border-white/25 bg-zinc-900/95 text-white shadow-2xl backdrop-blur-md hover:bg-zinc-800'
+    : 'border border-slate-200 bg-white/95 text-violet-800 shadow-2xl backdrop-blur-md hover:bg-violet-50';
+
+  const panelClass = highContrast
+    ? 'border border-white/20 bg-zinc-950/98 text-white shadow-2xl backdrop-blur-md'
+    : 'border border-slate-200 bg-white/98 text-slate-900 shadow-2xl backdrop-blur-md';
+
+  const muted = highContrast ? 'text-violet-100/85' : 'text-slate-600';
+
+  return (
+    <>
+      <button
+        ref={fabRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls="exam-sync-board-panel"
+        title={open ? 'Sync-Steuerung schließen' : 'Synchronsteuerung öffnen'}
+        aria-label={open ? 'Synchronsteuerung schließen' : 'Synchronsteuerung öffnen'}
+        onClick={() => setOpen((v) => !v)}
+        className={`fixed z-[35] flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 ${fabClass} ${
+          enabled ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-transparent' : ''
+        } bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-[max(0.75rem,env(safe-area-inset-right,0px))] sm:bottom-6 sm:right-6`}
+      >
+        <span className="relative flex items-center justify-center">
+          {enabled ? <Link2 className="h-6 w-6" aria-hidden /> : <Link2Off className="h-6 w-6" aria-hidden />}
+          {enabled && (
+            <span
+              className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-emerald-400 shadow"
+              title="Sync aktiv"
+              aria-hidden
+            />
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[33] bg-slate-950/35 backdrop-blur-[1px] sm:hidden"
+            aria-label="Schließen"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            ref={panelRef}
+            id="exam-sync-board-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="exam-sync-board-title"
+            onPointerDownCapture={bumpActivity}
+            className={`fixed z-[36] flex max-h-[min(52dvh,24rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto overscroll-contain rounded-2xl p-3 sm:max-h-[min(58dvh,28rem)] sm:p-4 ${panelClass} bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] right-[max(0.75rem,env(safe-area-inset-right,0px))] sm:bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:right-6`}
+          >
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p
+                  id="exam-sync-board-title"
+                  className={`text-xs font-black uppercase tracking-wide ${highContrast ? 'text-violet-200' : 'text-violet-700'}`}
+                >
+                  Synchronsteuerung
+                </p>
+                <p className={`text-sm font-semibold ${muted}`}>
+                  {enabled ? 'Sync aktiv · beide Prüfungen gekoppelt' : 'Getrennt · bei Bedarf koppeln'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl ${
+                  highContrast ? 'hover:bg-white/10' : 'hover:bg-slate-100'
+                }`}
+                aria-label="Panel schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              disabled={!splitReady}
+              onClick={() => {
+                bumpActivity();
+                onToggle(!enabled);
+              }}
+              className={`mb-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                enabled
+                  ? 'bg-violet-700 text-white hover:bg-violet-800'
+                  : highContrast
+                    ? 'border border-white/15 bg-white/10 text-white hover:bg-white/15'
+                    : 'border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100'
+              }`}
+            >
+              {enabled ? <Link2 className="h-5 w-5 shrink-0" /> : <Link2Off className="h-5 w-5 shrink-0" />}
+              {enabled ? 'Synchronsteuerung lösen' : 'Synchronsteuerung aktivieren'}
+            </button>
+
+            {!splitReady && (
+              <p
+                className={`mb-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                  highContrast ? 'border-white/10 bg-white/5 text-violet-100' : 'border-violet-200 bg-violet-50/80 text-violet-900'
+                }`}
+              >
+                Erst verfügbar, wenn Prüfung A und B übernommen und fehlerfrei sind.
+              </p>
+            )}
+
+            {state.syncNotice && (
+              <p
+                className={`mb-3 rounded-xl border px-3 py-2 text-xs font-semibold ${highContrast ? 'border-white/10 bg-zinc-900 text-violet-100' : 'border-violet-200 bg-violet-50 text-violet-900'}`}
+                role="status"
+              >
+                {state.syncNotice}
+              </p>
+            )}
+
+            {enabled && splitReady && (
+              <div className={`space-y-2 border-t pt-3 ${highContrast ? 'border-white/15' : 'border-violet-200'}`}>
+                <p className={`text-[11px] font-bold uppercase tracking-wide ${highContrast ? 'text-violet-200' : 'text-violet-700'}`}>
+                  Beide Prüfungen
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <SyncActionButton variant="board" label="Beide starten" icon={<Play className="h-5 w-5" />} onClick={onStartBoth} disabled={!canStartBoth} tone="primary" />
+                  <SyncActionButton variant="board" label="Beide pausieren" icon={<Pause className="h-5 w-5" />} onClick={onPauseBoth} disabled={!canPauseBoth} tone="warning" />
+                  <SyncActionButton variant="board" label="Beide fortsetzen" icon={<Play className="h-5 w-5" />} onClick={onResumeBoth} disabled={!canResumeBoth} tone="success" />
+                  <SyncActionButton variant="board" label="Beide stoppen" icon={<Square className="h-5 w-5" />} onClick={onStopBoth} disabled={!canStopBoth} tone="danger" />
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function SyncControlPanel({
   state,
   now,
+  boardMode,
   splitReady,
   onToggle,
   onStartBoth,
@@ -954,6 +1192,7 @@ function SyncControlPanel({
 }: {
   state: SplitScreenSession;
   now: number;
+  boardMode: boolean;
   splitReady: boolean;
   onToggle: (enabled: boolean) => void;
   onStartBoth: () => void;
@@ -968,13 +1207,32 @@ function SyncControlPanel({
   const canResumeBoth = canSyncResumeSession(state.sessions.A) || canSyncResumeSession(state.sessions.B);
   const canStopBoth = canSyncStopSession(state.sessions.A) || canSyncStopSession(state.sessions.B);
 
+  if (boardMode) {
+    return (
+      <BoardModeSyncFloating
+        state={state}
+        splitReady={splitReady}
+        enabled={enabled}
+        canStartBoth={canStartBoth}
+        canPauseBoth={canPauseBoth}
+        canResumeBoth={canResumeBoth}
+        canStopBoth={canStopBoth}
+        onToggle={onToggle}
+        onStartBoth={onStartBoth}
+        onPauseBoth={onPauseBoth}
+        onResumeBoth={onResumeBoth}
+        onStopBoth={onStopBoth}
+      />
+    );
+  }
+
   const shellClass = highContrast
     ? 'border-violet-300/30 bg-violet-300/10 text-white'
     : 'border-violet-200 bg-violet-50 text-slate-950';
   const mutedText = highContrast ? 'text-violet-100/80' : 'text-slate-600';
 
   return (
-    <section className={`mx-auto max-w-[112rem] px-3 pt-3 sm:px-5 ${state.boardMode ? 'sticky top-[4.25rem] z-20' : ''}`}>
+    <section className="mx-auto max-w-[112rem] px-3 pt-3 sm:px-5">
       <div className={`rounded-2xl border p-3 shadow-sm sm:p-4 ${shellClass}`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -1058,12 +1316,14 @@ function SyncActionButton({
   onClick,
   disabled,
   tone,
+  variant = 'default',
 }: {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
   disabled: boolean;
   tone: 'primary' | 'warning' | 'success' | 'danger';
+  variant?: 'default' | 'board';
 }) {
   const toneClass =
     tone === 'primary'
@@ -1074,15 +1334,20 @@ function SyncActionButton({
           ? 'bg-emerald-600 text-white hover:bg-emerald-700'
           : 'bg-rose-600 text-white hover:bg-rose-700';
 
+  const sizeClass =
+    variant === 'board'
+      ? 'min-h-12 gap-2 rounded-xl px-2.5 text-xs font-black sm:min-h-14 sm:px-3 sm:text-sm'
+      : 'min-h-14 gap-2 rounded-xl px-3 text-sm font-black';
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black shadow-sm disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none ${toneClass}`}
+      className={`inline-flex w-full items-center justify-center shadow-sm disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none ${sizeClass} ${toneClass}`}
     >
       {icon}
-      <span>{label}</span>
+      <span className="text-center leading-tight">{label}</span>
     </button>
   );
 }
@@ -1750,11 +2015,11 @@ function ExamSessionWorkspace({
     return (
       <section
         onClick={onActivate}
-        className={`min-h-[calc(100dvh-5.75rem)] overflow-hidden rounded-2xl border ${borderClass} ${
+        className={`min-h-[calc(100dvh-3.5rem)] overflow-hidden rounded-2xl border ${borderClass} ${
           highContrast ? 'bg-zinc-900' : 'bg-white'
         } shadow-sm`}
       >
-        <div className="flex h-full min-h-[calc(100dvh-5.75rem)] flex-col">
+        <div className="flex h-full min-h-[calc(100dvh-3.5rem)] flex-col">
           <ExamBoardDisplay session={session} pane={pane} now={now} split={split} boardMode highContrast={highContrast} />
           <div className={`border-t p-3 ${highContrast ? 'border-white/10 bg-zinc-900' : 'border-slate-100 bg-white'}`}>
             <p className={`mb-2 text-xs font-black uppercase tracking-wide ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>
