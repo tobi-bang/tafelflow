@@ -307,10 +307,6 @@ function getExamSummary(session: ExamSession) {
   };
 }
 
-function hasTimerProgress(session: ExamSession): boolean {
-  return Object.keys(session.timer.progress).length > 0;
-}
-
 function canSyncStartSession(session: ExamSession): boolean {
   return !session.timer.activeSegmentId && session.timer.status !== 'finished' && Boolean(findNextPendingSegment(session, { includeBreaks: true }));
 }
@@ -324,8 +320,9 @@ function canSyncResumeSession(session: ExamSession): boolean {
   return session.timer.status === 'paused' && Boolean(session.timer.activeSegmentId);
 }
 
-function canSyncStopSession(session: ExamSession): boolean {
-  return session.timer.status !== 'finished' && (Boolean(session.timer.activeSegmentId) || hasTimerProgress(session));
+/** Sync „Abschnitt beenden“: nur sinnvoll, wenn ein Abschnitt (inkl. Vorbereitung) aktiv ist. */
+function canSyncFinishCurrentSection(session: ExamSession): boolean {
+  return session.timer.status !== 'finished' && Boolean(session.timer.activeSegmentId);
 }
 
 function syncSkipReason(session: ExamSession, pane: ExamPaneId, action: 'start' | 'pause' | 'resume' | 'stop', now: number): string {
@@ -350,11 +347,23 @@ function syncSkipReason(session: ExamSession, pane: ExamPaneId, action: 'start' 
     if (!findNextPendingSegment(session, { includeBreaks: true })) return `${label} hat keinen offenen Abschnitt.`;
     return `${label} konnte nicht gestartet werden.`;
   }
-  if (!hasTimerProgress(session) && !session.timer.activeSegmentId) return `${label} wurde noch nicht gestartet.`;
-  return `${label} konnte nicht gestoppt werden.`;
+  if (action === 'stop') {
+    if (!session.timer.activeSegmentId) return `${label} hatte keinen laufenden Abschnitt.`;
+    return `${label}: Abschnitt konnte nicht beendet werden.`;
+  }
+  return `${label}: Aktion nicht möglich.`;
 }
 
 function syncActionMessage(action: 'start' | 'pause' | 'resume' | 'stop', changed: ExamPaneId[], skipped: string[]): string {
+  if (action === 'stop') {
+    const success =
+      changed.length === 2
+        ? 'Bei beiden Prüfungen wurde der aktuelle Abschnitt beendet.'
+        : changed.length === 1
+          ? `Bei Prüfung ${changed[0]} wurde der aktuelle Abschnitt beendet.`
+          : 'Kein laufender Abschnitt konnte beendet werden.';
+    return [...skipped, success].join(' ');
+  }
   const verb = action === 'start' ? 'gestartet' : action === 'pause' ? 'pausiert' : action === 'resume' ? 'fortgesetzt' : 'gestoppt';
   const success =
     changed.length === 2
@@ -742,7 +751,7 @@ export default function ExamTimerTool() {
   };
 
   const stopBoth = () => {
-    if (!confirm('Sollen wirklich beide Prüfungen gestoppt werden?')) return;
+    if (!confirm('Aktuelle Abschnitte beider Prüfungen beenden? Die Prüfungen laufen weiter – der nächste Abschnitt startet nicht automatisch.')) return;
     const actionNow = Date.now();
     setState((prev) => {
       const changed: ExamPaneId[] = [];
@@ -750,15 +759,15 @@ export default function ExamTimerTool() {
       let nextA = prev.sessions.A;
       let nextB = prev.sessions.B;
 
-      if (canSyncStopSession(prev.sessions.A)) {
-        nextA = finishExam(prev.sessions.A, actionNow);
+      if (canSyncFinishCurrentSection(prev.sessions.A)) {
+        nextA = finishSection(prev.sessions.A, actionNow);
         changed.push('A');
       } else {
         skipped.push(syncSkipReason(prev.sessions.A, 'A', 'stop', actionNow));
       }
 
-      if (canSyncStopSession(prev.sessions.B)) {
-        nextB = finishExam(prev.sessions.B, actionNow);
+      if (canSyncFinishCurrentSection(prev.sessions.B)) {
+        nextB = finishSection(prev.sessions.B, actionNow);
         changed.push('B');
       } else {
         skipped.push(syncSkipReason(prev.sessions.B, 'B', 'stop', actionNow));
@@ -969,7 +978,7 @@ function HeaderSyncControl({
   const canStartBoth = splitReady && canSyncStartSession(state.sessions.A) && canSyncStartSession(state.sessions.B);
   const canPauseBoth = canSyncPauseSession(state.sessions.A, now) || canSyncPauseSession(state.sessions.B, now);
   const canResumeBoth = canSyncResumeSession(state.sessions.A) || canSyncResumeSession(state.sessions.B);
-  const canStopBoth = canSyncStopSession(state.sessions.A) || canSyncStopSession(state.sessions.B);
+  const canStopBoth = canSyncFinishCurrentSection(state.sessions.A) || canSyncFinishCurrentSection(state.sessions.B);
 
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -1172,7 +1181,7 @@ function HeaderSyncControl({
                   <SyncActionButton variant="board" label="Beide starten" icon={<Play className="h-5 w-5" />} onClick={onStartBoth} disabled={!canStartBoth} tone="primary" />
                   <SyncActionButton variant="board" label="Beide pausieren" icon={<Pause className="h-5 w-5" />} onClick={onPauseBoth} disabled={!canPauseBoth} tone="warning" />
                   <SyncActionButton variant="board" label="Beide fortsetzen" icon={<Play className="h-5 w-5" />} onClick={onResumeBoth} disabled={!canResumeBoth} tone="success" />
-                  <SyncActionButton variant="board" label="Beide stoppen" icon={<Square className="h-5 w-5" />} onClick={onStopBoth} disabled={!canStopBoth} tone="danger" />
+                  <SyncActionButton variant="board" label="Beide Abschnitte beenden" icon={<Square className="h-5 w-5" />} onClick={onStopBoth} disabled={!canStopBoth} tone="danger" />
                 </div>
               </div>
             )}
@@ -2077,7 +2086,7 @@ function CompactControls({
           className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-slate-800 sm:flex-none"
         >
           <Square className="h-4 w-4" />
-          Stop / Abschnitt beenden
+          Abschnitt beenden
         </button>
       )}
 
