@@ -104,6 +104,8 @@ export interface SplitScreenSession {
   activePane: ExamPaneId;
   boardMode: boolean;
   highContrast: boolean;
+  syncControlEnabled: boolean;
+  syncNotice?: string | null;
   sessions: Record<ExamPaneId, ExamSession>;
   setup: {
     step: ExamSetupStep;

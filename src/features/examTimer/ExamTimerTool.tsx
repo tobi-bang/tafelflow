@@ -11,6 +11,8 @@ import {
   Flag,
   Hourglass,
   LayoutPanelLeft,
+  Link2,
+  Link2Off,
   Maximize2,
   Minimize2,
   Palette,
@@ -116,6 +118,8 @@ function initialState(): SplitScreenSession {
     activePane: 'A',
     boardMode: false,
     highContrast: false,
+    syncControlEnabled: false,
+    syncNotice: null,
     sessions: {
       A: createDefaultExamSession('Prüfung A'),
       B: createDefaultExamSession('Prüfung B'),
@@ -156,6 +160,8 @@ function normalizeState(value: SplitScreenSession): SplitScreenSession {
     activePane: value.activePane === 'B' ? 'B' : 'A',
     boardMode: Boolean(value.setup && value.boardMode),
     highContrast: Boolean(value.highContrast),
+    syncControlEnabled: value.mode === 'split' && Boolean(value.syncControlEnabled),
+    syncNotice: null,
     sessions: {
       A: value.sessions?.A ?? fallback.sessions.A,
       B: value.sessions?.B ?? fallback.sessions.B,
@@ -300,6 +306,64 @@ function getExamSummary(session: ExamSession) {
   };
 }
 
+function hasTimerProgress(session: ExamSession): boolean {
+  return Object.keys(session.timer.progress).length > 0;
+}
+
+function canSyncStartSession(session: ExamSession): boolean {
+  return !session.timer.activeSegmentId && session.timer.status !== 'finished' && Boolean(findNextPendingSegment(session, { includeBreaks: true }));
+}
+
+function canSyncPauseSession(session: ExamSession, now: number): boolean {
+  const remaining = calculateCurrentRemainingTime(session, now);
+  return session.timer.status === 'running' && Boolean(session.timer.activeSegmentId) && remaining != null && remaining > 0;
+}
+
+function canSyncResumeSession(session: ExamSession): boolean {
+  return session.timer.status === 'paused' && Boolean(session.timer.activeSegmentId);
+}
+
+function canSyncStopSession(session: ExamSession): boolean {
+  return session.timer.status !== 'finished' && (Boolean(session.timer.activeSegmentId) || hasTimerProgress(session));
+}
+
+function syncSkipReason(session: ExamSession, pane: ExamPaneId, action: 'start' | 'pause' | 'resume' | 'stop', now: number): string {
+  const label = `Prüfung ${pane}`;
+  const remaining = calculateCurrentRemainingTime(session, now);
+  if (session.timer.status === 'finished') return `${label} war bereits beendet.`;
+  if (action === 'pause' && session.timer.status === 'running' && remaining != null && remaining <= 0) {
+    return `${label} ist bereits abgelaufen.`;
+  }
+  if (action === 'pause') {
+    if (session.timer.status === 'paused') return `${label} war bereits pausiert.`;
+    if (!session.timer.activeSegmentId) return `${label} läuft noch nicht und wurde daher nicht pausiert.`;
+    return `${label} konnte nicht pausiert werden.`;
+  }
+  if (action === 'resume') {
+    if (session.timer.status === 'running') return `${label} lief bereits weiter.`;
+    if (!session.timer.activeSegmentId) return `${label} läuft noch nicht und wurde daher nicht fortgesetzt.`;
+    return `${label} konnte nicht fortgesetzt werden.`;
+  }
+  if (action === 'start') {
+    if (session.timer.activeSegmentId) return `${label} läuft bereits.`;
+    if (!findNextPendingSegment(session, { includeBreaks: true })) return `${label} hat keinen offenen Abschnitt.`;
+    return `${label} konnte nicht gestartet werden.`;
+  }
+  if (!hasTimerProgress(session) && !session.timer.activeSegmentId) return `${label} wurde noch nicht gestartet.`;
+  return `${label} konnte nicht gestoppt werden.`;
+}
+
+function syncActionMessage(action: 'start' | 'pause' | 'resume' | 'stop', changed: ExamPaneId[], skipped: string[]): string {
+  const verb = action === 'start' ? 'gestartet' : action === 'pause' ? 'pausiert' : action === 'resume' ? 'fortgesetzt' : 'gestoppt';
+  const success =
+    changed.length === 2
+      ? `Beide Prüfungen wurden ${verb}.`
+      : changed.length === 1
+        ? `Es wurde nur Prüfung ${changed[0]} ${verb}.`
+        : `Keine Prüfung wurde ${verb}.`;
+  return [...skipped, success].join(' ');
+}
+
 function formatTotalMinutes(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
@@ -401,6 +465,14 @@ export default function ExamTimerTool() {
     return () => window.clearTimeout(id);
   }, [state.setup.flash]);
 
+  useEffect(() => {
+    if (!state.syncNotice) return;
+    const id = window.setTimeout(() => {
+      setState((prev) => ({ ...prev, syncNotice: null }));
+    }, 4200);
+    return () => window.clearTimeout(id);
+  }, [state.syncNotice]);
+
   const updatePane = (pane: ExamPaneId, updater: (session: ExamSession) => ExamSession) => {
     setState((prev) => ({
       ...prev,
@@ -418,6 +490,8 @@ export default function ExamTimerTool() {
       mode,
       activePane: mode === 'single' ? 'A' : prev.activePane,
       boardMode: mode === 'single' ? false : prev.boardMode,
+      syncControlEnabled: mode === 'split' ? prev.syncControlEnabled : false,
+      syncNotice: mode === 'split' ? prev.syncNotice : null,
       setup: {
         ...prev.setup,
         selectedMode: mode,
@@ -455,6 +529,8 @@ export default function ExamTimerTool() {
       mode: 'single',
       activePane: 'A',
       boardMode: false,
+      syncControlEnabled: false,
+      syncNotice: null,
       setup: {
         ...prev.setup,
         selectedMode: 'single',
@@ -474,6 +550,7 @@ export default function ExamTimerTool() {
         mode: 'split',
         activePane: 'A',
         boardMode: false,
+        syncControlEnabled: prev.syncControlEnabled,
         sessions: {
           A: maler,
           B: fahrzeug,
@@ -558,6 +635,140 @@ export default function ExamTimerTool() {
         B: resetSession(prev.sessions.B),
       },
     }));
+  };
+
+  const setSyncControlEnabled = (enabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      syncControlEnabled: prev.mode === 'split' ? enabled : false,
+      syncNotice: enabled
+        ? 'Synchronsteuerung aktiv. Einzelsteuerungen bleiben weiterhin verfügbar.'
+        : 'Synchronsteuerung gelöst. Prüfung A und Prüfung B werden getrennt gesteuert.',
+    }));
+  };
+
+  const startBoth = () => {
+    const actionNow = Date.now();
+    setState((prev) => {
+      const changed: ExamPaneId[] = [];
+      const skipped: string[] = [];
+      let nextA = prev.sessions.A;
+      let nextB = prev.sessions.B;
+
+      if (canSyncStartSession(prev.sessions.A)) {
+        nextA = startSection(prev.sessions.A, undefined, actionNow);
+        changed.push('A');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.A, 'A', 'start', actionNow));
+      }
+
+      if (canSyncStartSession(prev.sessions.B)) {
+        nextB = startSection(prev.sessions.B, undefined, actionNow);
+        changed.push('B');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.B, 'B', 'start', actionNow));
+      }
+
+      return {
+        ...prev,
+        sessions: { A: nextA, B: nextB },
+        syncNotice:
+          changed.length === 2
+            ? `Beide Prüfungen wurden mit demselben Startzeitpunkt ${formatTime(new Date(actionNow))} gestartet.`
+            : syncActionMessage('start', changed, skipped),
+      };
+    });
+  };
+
+  const pauseBoth = () => {
+    const actionNow = Date.now();
+    setState((prev) => {
+      const changed: ExamPaneId[] = [];
+      const skipped: string[] = [];
+      let nextA = prev.sessions.A;
+      let nextB = prev.sessions.B;
+
+      if (canSyncPauseSession(prev.sessions.A, actionNow)) {
+        nextA = pauseSection(prev.sessions.A, actionNow);
+        changed.push('A');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.A, 'A', 'pause', actionNow));
+      }
+
+      if (canSyncPauseSession(prev.sessions.B, actionNow)) {
+        nextB = pauseSection(prev.sessions.B, actionNow);
+        changed.push('B');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.B, 'B', 'pause', actionNow));
+      }
+
+      return {
+        ...prev,
+        sessions: { A: nextA, B: nextB },
+        syncNotice: syncActionMessage('pause', changed, skipped),
+      };
+    });
+  };
+
+  const resumeBoth = () => {
+    const actionNow = Date.now();
+    setState((prev) => {
+      const changed: ExamPaneId[] = [];
+      const skipped: string[] = [];
+      let nextA = prev.sessions.A;
+      let nextB = prev.sessions.B;
+
+      if (canSyncResumeSession(prev.sessions.A)) {
+        nextA = resumeSection(prev.sessions.A, actionNow);
+        changed.push('A');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.A, 'A', 'resume', actionNow));
+      }
+
+      if (canSyncResumeSession(prev.sessions.B)) {
+        nextB = resumeSection(prev.sessions.B, actionNow);
+        changed.push('B');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.B, 'B', 'resume', actionNow));
+      }
+
+      return {
+        ...prev,
+        sessions: { A: nextA, B: nextB },
+        syncNotice: syncActionMessage('resume', changed, skipped),
+      };
+    });
+  };
+
+  const stopBoth = () => {
+    if (!confirm('Sollen wirklich beide Prüfungen gestoppt werden?')) return;
+    const actionNow = Date.now();
+    setState((prev) => {
+      const changed: ExamPaneId[] = [];
+      const skipped: string[] = [];
+      let nextA = prev.sessions.A;
+      let nextB = prev.sessions.B;
+
+      if (canSyncStopSession(prev.sessions.A)) {
+        nextA = finishExam(prev.sessions.A, actionNow);
+        changed.push('A');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.A, 'A', 'stop', actionNow));
+      }
+
+      if (canSyncStopSession(prev.sessions.B)) {
+        nextB = finishExam(prev.sessions.B, actionNow);
+        changed.push('B');
+      } else {
+        skipped.push(syncSkipReason(prev.sessions.B, 'B', 'stop', actionNow));
+      }
+
+      return {
+        ...prev,
+        sessions: { A: nextA, B: nextB },
+        syncNotice: syncActionMessage('stop', changed, skipped),
+      };
+    });
   };
 
   const toggleFullscreen = async () => {
@@ -651,6 +862,19 @@ export default function ExamTimerTool() {
         </div>
       </header>
 
+      {state.mode === 'split' && (
+        <SyncControlPanel
+          state={state}
+          now={now}
+          splitReady={splitReady}
+          onToggle={setSyncControlEnabled}
+          onStartBoth={startBoth}
+          onPauseBoth={pauseBoth}
+          onResumeBoth={resumeBoth}
+          onStopBoth={stopBoth}
+        />
+      )}
+
       <main className={`mx-auto max-w-[112rem] ${state.boardMode ? 'p-2 sm:p-3' : 'p-3 sm:p-5'}`}>
         {!state.boardMode ? (
           <SetupWizard
@@ -687,6 +911,7 @@ export default function ExamTimerTool() {
                   split={state.mode === 'split'}
                   boardMode={state.boardMode}
                   highContrast={state.highContrast}
+                  syncControlEnabled={state.syncControlEnabled}
                   active={state.activePane === pane}
                   templates={templates}
                   customTemplates={customTemplates}
@@ -715,6 +940,151 @@ function headerButtonClass(highContrast: boolean, active: boolean): string {
   return `inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
     active ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
   }`;
+}
+
+function SyncControlPanel({
+  state,
+  now,
+  splitReady,
+  onToggle,
+  onStartBoth,
+  onPauseBoth,
+  onResumeBoth,
+  onStopBoth,
+}: {
+  state: SplitScreenSession;
+  now: number;
+  splitReady: boolean;
+  onToggle: (enabled: boolean) => void;
+  onStartBoth: () => void;
+  onPauseBoth: () => void;
+  onResumeBoth: () => void;
+  onStopBoth: () => void;
+}) {
+  const highContrast = state.highContrast;
+  const enabled = state.syncControlEnabled;
+  const canStartBoth = splitReady && canSyncStartSession(state.sessions.A) && canSyncStartSession(state.sessions.B);
+  const canPauseBoth = canSyncPauseSession(state.sessions.A, now) || canSyncPauseSession(state.sessions.B, now);
+  const canResumeBoth = canSyncResumeSession(state.sessions.A) || canSyncResumeSession(state.sessions.B);
+  const canStopBoth = canSyncStopSession(state.sessions.A) || canSyncStopSession(state.sessions.B);
+
+  const shellClass = highContrast
+    ? 'border-violet-300/30 bg-violet-300/10 text-white'
+    : 'border-violet-200 bg-violet-50 text-slate-950';
+  const mutedText = highContrast ? 'text-violet-100/80' : 'text-slate-600';
+
+  return (
+    <section className={`mx-auto max-w-[112rem] px-3 pt-3 sm:px-5 ${state.boardMode ? 'sticky top-[4.25rem] z-20' : ''}`}>
+      <div className={`rounded-2xl border p-3 shadow-sm sm:p-4 ${shellClass}`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-xl ${enabled ? 'bg-violet-600 text-white' : highContrast ? 'bg-white/10 text-white' : 'bg-white text-violet-700'}`}>
+                {enabled ? <Link2 className="h-5 w-5" /> : <Link2Off className="h-5 w-5" />}
+              </span>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide">Synchronsteuerung</p>
+                <p className={`text-sm font-semibold ${mutedText}`}>
+                  {enabled ? 'Synchronsteuerung aktiv' : 'Prüfungen werden getrennt gesteuert'}
+                </p>
+              </div>
+              {enabled && <span className="rounded-full bg-violet-600 px-3 py-1 text-xs font-black text-white">aktiv</span>}
+            </div>
+            <p className={`mt-2 max-w-3xl text-sm ${mutedText}`}>
+              Startet, pausiert oder setzt beide Prüfungen gleichzeitig fort. Die einzelnen Prüfungszeiten bleiben unabhängig.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            disabled={!splitReady}
+            onClick={() => onToggle(!enabled)}
+            className={`inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              enabled
+                ? 'bg-violet-700 text-white hover:bg-violet-800'
+                : highContrast
+                  ? 'border border-white/15 bg-white/10 text-white hover:bg-white/15'
+                  : 'border border-violet-200 bg-white text-violet-800 hover:bg-violet-100'
+            }`}
+          >
+            {enabled ? <Link2 className="h-5 w-5" /> : <Link2Off className="h-5 w-5" />}
+            Synchronsteuerung aktivieren
+          </button>
+        </div>
+
+        {!splitReady && (
+          <p className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${highContrast ? 'border-white/10 bg-white/5 text-violet-100' : 'border-violet-200 bg-white/70 text-violet-900'}`}>
+            Synchronsteuerung ist verfügbar, sobald Prüfung A und Prüfung B übernommen und fehlerfrei eingerichtet sind.
+          </p>
+        )}
+
+        {state.syncNotice && (
+          <p className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${highContrast ? 'border-white/10 bg-zinc-950/60 text-violet-100' : 'border-violet-200 bg-white text-violet-900'}`} role="status">
+            {state.syncNotice}
+          </p>
+        )}
+
+        {enabled && (
+          <div className={`mt-3 border-t pt-3 ${highContrast ? 'border-white/10' : 'border-violet-200'}`}>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-black">Synchronsteuerung</h2>
+              <button
+                type="button"
+                onClick={() => onToggle(false)}
+                className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black ${highContrast ? 'bg-white/10 text-white hover:bg-white/15' : 'bg-white text-violet-800 hover:bg-violet-100'}`}
+              >
+                <Link2Off className="h-4 w-4" />
+                Synchronsteuerung lösen
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <SyncActionButton label="Beide starten" icon={<Play className="h-5 w-5" />} onClick={onStartBoth} disabled={!canStartBoth} tone="primary" />
+              <SyncActionButton label="Beide pausieren" icon={<Pause className="h-5 w-5" />} onClick={onPauseBoth} disabled={!canPauseBoth} tone="warning" />
+              <SyncActionButton label="Beide fortsetzen" icon={<Play className="h-5 w-5" />} onClick={onResumeBoth} disabled={!canResumeBoth} tone="success" />
+              <SyncActionButton label="Beide stoppen" icon={<Square className="h-5 w-5" />} onClick={onStopBoth} disabled={!canStopBoth} tone="danger" />
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SyncActionButton({
+  label,
+  icon,
+  onClick,
+  disabled,
+  tone,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled: boolean;
+  tone: 'primary' | 'warning' | 'success' | 'danger';
+}) {
+  const toneClass =
+    tone === 'primary'
+      ? 'bg-blue-600 text-white hover:bg-blue-700'
+      : tone === 'warning'
+        ? 'bg-amber-500 text-amber-950 hover:bg-amber-400'
+        : tone === 'success'
+          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+          : 'bg-rose-600 text-white hover:bg-rose-700';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex min-h-14 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black shadow-sm disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none ${toneClass}`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
 }
 
 function SetupWizard({
@@ -1341,6 +1711,7 @@ function ExamSessionWorkspace({
   split,
   boardMode,
   highContrast,
+  syncControlEnabled,
   active,
   templates,
   customTemplates,
@@ -1356,6 +1727,7 @@ function ExamSessionWorkspace({
   split: boolean;
   boardMode: boolean;
   highContrast: boolean;
+  syncControlEnabled: boolean;
   active: boolean;
   templates: ExamTemplate[];
   customTemplates: ExamTemplate[];
@@ -1388,6 +1760,11 @@ function ExamSessionWorkspace({
             <p className={`mb-2 text-xs font-black uppercase tracking-wide ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>
               Steuerung Prüfung {pane}
             </p>
+            {syncControlEnabled && (
+              <p className={`mb-2 rounded-xl px-3 py-2 text-xs font-semibold ${highContrast ? 'bg-violet-300/10 text-violet-100' : 'bg-violet-50 text-violet-800'}`}>
+                Hinweis: Die Synchronsteuerung ist aktiv. Diese Aktion betrifft nur Prüfung {pane}.
+              </p>
+            )}
             <CompactControls session={session} now={now} highContrast={highContrast} onChange={onChange} wrap />
           </div>
         </div>
@@ -1428,7 +1805,7 @@ function ExamSessionWorkspace({
       <div className="grid gap-0 xl:grid-cols-[minmax(20rem,0.92fr)_minmax(28rem,1.08fr)]">
         <div className={`border-b xl:border-b-0 xl:border-r ${highContrast ? 'border-white/10' : 'border-slate-100'}`}>
           <div className="sticky top-[4.5rem] max-h-none overflow-visible xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto">
-            <TeacherControls pane={pane} session={session} now={now} highContrast={highContrast} onChange={onChange} />
+            <TeacherControls pane={pane} session={session} now={now} highContrast={highContrast} syncControlEnabled={syncControlEnabled} onChange={onChange} />
             <ConfigurationPanel
               session={session}
               templates={templates}
@@ -1455,12 +1832,14 @@ function TeacherControls({
   session,
   now,
   highContrast,
+  syncControlEnabled,
   onChange,
 }: {
   pane: ExamPaneId;
   session: ExamSession;
   now: number;
   highContrast: boolean;
+  syncControlEnabled: boolean;
   onChange: (updater: (session: ExamSession) => ExamSession) => void;
 }) {
   return (
@@ -1471,6 +1850,11 @@ function TeacherControls({
           <p className={`text-xs ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>Start, Pause, Abschnittswechsel und kritische Aktionen.</p>
         </div>
       </div>
+      {syncControlEnabled && (
+        <p className={`mb-3 rounded-xl px-3 py-2 text-xs font-semibold ${highContrast ? 'bg-violet-300/10 text-violet-100' : 'bg-violet-50 text-violet-800'}`}>
+          Hinweis: Die Synchronsteuerung ist aktiv. Diese Aktion betrifft nur Prüfung {pane}.
+        </p>
+      )}
       <CompactControls session={session} now={now} highContrast={highContrast} onChange={onChange} wrap />
     </div>
   );
