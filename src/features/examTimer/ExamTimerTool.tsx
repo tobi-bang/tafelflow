@@ -934,7 +934,7 @@ export default function ExamTimerTool() {
             }
           />
         ) : (
-          <div className={`grid gap-3 ${state.mode === 'split' ? 'xl:grid-cols-2' : 'grid-cols-1'}`}>
+          <div className={`grid min-w-0 gap-3 ${state.mode === 'split' ? 'xl:grid-cols-2' : 'grid-cols-1'}`}>
             {visiblePanes.map((pane) => (
               <React.Fragment key={pane}>
                 <ExamSessionWorkspace
@@ -1920,11 +1920,11 @@ function ExamSessionWorkspace({
     return (
       <section
         onClick={onActivate}
-        className={`min-h-[calc(100dvh-3.5rem)] overflow-hidden rounded-2xl border ${borderClass} ${
+        className={`min-h-[calc(100dvh-3.5rem)] w-full min-w-0 overflow-y-auto rounded-2xl border ${borderClass} ${
           highContrast ? 'bg-zinc-900' : 'bg-white'
         } shadow-sm`}
       >
-        <div className="flex h-full min-h-[calc(100dvh-3.5rem)] flex-col">
+        <div className="flex h-full min-h-[calc(100dvh-3.5rem)] w-full min-w-0 flex-col">
           <ExamBoardDisplay session={session} pane={pane} now={now} split={split} boardMode highContrast={highContrast} />
           <div className={`border-t p-3 ${highContrast ? 'border-white/10 bg-zinc-900' : 'border-slate-100 bg-white'}`}>
             <p className={`mb-2 text-xs font-black uppercase tracking-wide ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>
@@ -2590,10 +2590,19 @@ function ExamBoardDisplay({
         ? 'bg-amber-50 text-slate-950'
         : 'bg-white text-slate-950';
 
+  const boardTimerClass = boardMode
+    ? split
+      ? 'text-[clamp(2rem,min(16cqi,14vw),7.5rem)]'
+      : 'text-[clamp(2.75rem,min(11cqi,12vw),14rem)]'
+    : 'text-[clamp(4rem,14vw,11rem)]';
+
   return (
-    <div className={`flex min-h-0 flex-1 flex-col ${shellClass} ${boardMode ? 'p-4 sm:p-6' : 'p-4 sm:p-6'}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+    <div
+      className={`flex min-h-0 min-w-0 w-full flex-1 flex-col ${shellClass} ${boardMode ? 'p-3 sm:p-5' : 'p-4 sm:p-6'}`}
+      style={boardMode ? ({ containerType: 'inline-size' } as React.CSSProperties) : undefined}
+    >
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {split && <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">Prüfung {pane}</span>}
             <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide ${statusBadgeClass(status, highContrast)}`}>
@@ -2621,17 +2630,19 @@ function ExamBoardDisplay({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-center py-5 text-center">
+      <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col justify-center px-1 py-4 text-center sm:px-2 sm:py-5">
         <p className={`mb-2 text-sm font-bold uppercase tracking-[0.2em] ${highContrast ? 'text-zinc-400' : 'text-slate-500'}`}>
           {overtime > 0 ? 'Überziehungszeit' : activeSegment ? 'Verbleibende Zeit' : nextPending ? 'Geplante Dauer (noch nicht gestartet)' : 'Verbleibende Zeit'}
         </p>
-        <div
-          className={`font-mono font-black leading-none tabular-nums tracking-normal ${timerTone} ${
-            boardMode ? 'text-[clamp(5rem,18vw,16rem)]' : 'text-[clamp(4rem,14vw,11rem)]'
-          } ${warning ? 'exam-timer-blink' : ''}`}
-          aria-live="polite"
-        >
-          {overtime > 0 ? `+${formatClock(displayMs)}` : formatClock(displayMs)}
+        <div className="mx-auto flex w-full max-w-full min-w-0 justify-center overflow-visible">
+          <div
+            className={`max-w-full whitespace-nowrap font-mono font-black leading-none tabular-nums tracking-normal ${timerTone} ${boardTimerClass} ${
+              warning ? 'exam-timer-blink' : ''
+            }`}
+            aria-live="polite"
+          >
+            {overtime > 0 ? `+${formatClock(displayMs)}` : formatClock(displayMs)}
+          </div>
         </div>
       </div>
 
