@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { rowToSession } from '../lib/dbMap';
 import type { Session } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, ExternalLink, Presentation, LogOut } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Presentation, LogOut, TimerReset } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { requireTeacher } from '../lib/role';
 
@@ -154,7 +154,7 @@ export default function TeacherDashboard() {
             Geschützt: nur für Lehrkräfte. Hier erstellst und verwaltest du Sitzungen und Freigaben für SuS.
           </p>
         </div>
-        <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-2 md:flex md:shrink-0 md:flex-wrap">
+        <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-3 md:flex md:shrink-0 md:flex-wrap">
           <button
             type="button"
             onClick={() => setIsCreating(true)}
@@ -162,6 +162,14 @@ export default function TeacherDashboard() {
           >
             <Plus className="w-5 h-5" />
             Neue Sitzung
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/pruefungstimer')}
+            className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 font-semibold text-amber-950 transition-all hover:bg-amber-100"
+          >
+            <TimerReset className="w-5 h-5" />
+            Prüfungstimer öffnen
           </button>
           <button
             type="button"
@@ -174,6 +182,36 @@ export default function TeacherDashboard() {
           </button>
         </div>
       </header>
+
+      <section
+        className="mb-8 rounded-3xl border border-amber-100 bg-white p-4 shadow-sm sm:p-6 md:mb-10"
+        aria-labelledby="teacher-tools-heading"
+      >
+        <div className="mb-4">
+          <h2 id="teacher-tools-heading" className="text-lg font-bold text-slate-900 sm:text-xl">
+            Geschützte Werkzeuge
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">Nur nach Lehrkraft-Login erreichbar.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/pruefungstimer')}
+          className="group flex w-full flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left transition-all hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-md sm:flex-row sm:items-center sm:p-5"
+        >
+          <div className="flex min-h-14 min-w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-amber-950 shadow-sm">
+            <TimerReset className="h-7 w-7" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-xl font-black text-slate-950">Prüfungstimer</h3>
+            <p className="mt-1 text-sm text-slate-700 sm:text-base">
+              Prüfungszeiten, Pausen und Splitscreen steuern.
+            </p>
+          </div>
+          <span className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white group-hover:bg-slate-800">
+            Prüfungstimer öffnen
+          </span>
+        </button>
+      </section>
 
       <div className="grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
         <AnimatePresence>

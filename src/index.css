@@ -46,6 +46,16 @@
   }
 }
 
+@keyframes exam-timer-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.36;
+  }
+}
+
 @layer utilities {
   .scrollbar-none {
     scrollbar-width: none;
@@ -62,5 +72,24 @@
   .board-timer-finished {
     animation: board-timer-urgent-blink 0.45s ease-in-out infinite;
     color: rgb(185 28 28);
+  }
+
+  .exam-timer-blink {
+    animation: exam-timer-blink 0.6s ease-in-out infinite;
+  }
+}
+
+@media print {
+  header,
+  button,
+  input,
+  textarea,
+  select {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body {
+    overscroll-behavior-y: auto;
   }
 }

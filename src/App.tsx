@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import TeacherDashboard from './pages/TeacherDashboard';
 import SessionView from './pages/SessionView';
@@ -8,12 +8,22 @@ import StudentJoin from './pages/StudentJoin';
 import LoginTeacher from './pages/LoginTeacher';
 import RegisterTeacher from './pages/RegisterTeacher';
 import AuthCallback from './pages/AuthCallback';
+import ExamTimerPage from './pages/ExamTimerPage';
 import SupabaseConfigMissing from './components/SupabaseConfigMissing';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { requireTeacher } from './lib/role';
 
 function hasSession(u: SupabaseUser | null): boolean {
   return Boolean(u?.id);
+}
+
+function TeacherOnlyRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
+  const location = useLocation();
+
+  if (allowed) return <>{children}</>;
+
+  const redirect = `${location.pathname}${location.search}${location.hash}`;
+  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
 }
 
 export default function App() {
@@ -89,7 +99,7 @@ export default function App() {
     return <SupabaseConfigMissing />;
   }
 
-  if (authLoading || (hasSession(user) && roleCheckPending)) {
+  if (authLoading || (hasSession(user) && (roleCheckPending || teacherOk === null))) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
@@ -108,8 +118,20 @@ export default function App() {
           <Route path="/register" element={<RegisterTeacher />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route
+            path="/pruefungstimer/*"
+            element={
+              <TeacherOnlyRoute allowed={teacherRouteAllowed}>
+                <ExamTimerPage />
+              </TeacherOnlyRoute>
+            }
+          />
+          <Route
             path="/teacher"
-            element={teacherRouteAllowed ? <TeacherDashboard /> : <Navigate to="/login" replace />}
+            element={
+              <TeacherOnlyRoute allowed={teacherRouteAllowed}>
+                <TeacherDashboard />
+              </TeacherOnlyRoute>
+            }
           />
           <Route path="/session/:sessionId" element={<SessionView />} />
           <Route path="/join" element={<StudentJoin />} />

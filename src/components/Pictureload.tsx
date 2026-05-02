@@ -10,13 +10,20 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Edit3,
   ImagePlus,
   Images,
   Loader2,
+  Move,
+  RotateCcw,
+  RotateCw,
+  Save,
   Trash2,
   UserRound,
   X,
   XCircle,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 
 const MAX_BYTES = 6 * 1024 * 1024;
@@ -27,6 +34,44 @@ const ACCEPT =
 type TeacherGridFilter = 'all' | 'approved' | 'pending' | 'rejected';
 
 type UploadFileError = { fileName: string; message: string };
+
+type ImageEditDraft = {
+  rotation: number;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  cropData: Record<string, unknown> | null;
+};
+
+function normalizeRotation(value: number): number {
+  const rounded = Math.round(value);
+  return ((rounded % 360) + 360) % 360;
+}
+
+function clampScale(value: number): number {
+  return Math.min(4, Math.max(0.25, Number.isFinite(value) ? value : 1));
+}
+
+function editDraftFromImage(img: PictureloadImage): ImageEditDraft {
+  return {
+    rotation: normalizeRotation(img.edit.rotation),
+    scale: clampScale(img.edit.scale),
+    offsetX: Number.isFinite(img.edit.offsetX) ? img.edit.offsetX : 0,
+    offsetY: Number.isFinite(img.edit.offsetY) ? img.edit.offsetY : 0,
+    cropData: img.edit.cropData,
+  };
+}
+
+function resetEditDraft(): ImageEditDraft {
+  return { rotation: 0, scale: 1, offsetX: 0, offsetY: 0, cropData: null };
+}
+
+function pictureloadImageTransform(edit: ImageEditDraft | PictureloadImage['edit']): React.CSSProperties {
+  return {
+    transform: `translate(${edit.offsetX}px, ${edit.offsetY}px) rotate(${normalizeRotation(edit.rotation)}deg) scale(${clampScale(edit.scale)})`,
+    transformOrigin: 'center center',
+  };
+}
 
 /** Klare Meldung bei fehlendem Bucket vs. sonstigen Storage-Fehlern. */
 function formatPictureloadStorageError(message: string | undefined): string {
@@ -163,6 +208,18 @@ export default function Pictureload({
   const [teacherFilter, setTeacherFilter] = useState<TeacherGridFilter>('all');
   const [teacherStudentPreview, setTeacherStudentPreview] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [editingImage, setEditingImage] = useState<PictureloadImage | null>(null);
+  const [editDraft, setEditDraft] = useState<ImageEditDraft>(resetEditDraft);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editPreviewOriginal, setEditPreviewOriginal] = useState(false);
+  const [editDrag, setEditDrag] = useState<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
 
   const canUpload = isTeacher || permissions.pictureload;
   const moderationOn = permissions.pictureloadModeration === true;
@@ -204,6 +261,33 @@ export default function Pictureload({
 
   const lightbox =
     lightboxIndex >= 0 ? displayedImages[lightboxIndex] : lightboxId ? images.find((i) => i.id === lightboxId) ?? null : null;
+
+  const openEditor = (img: PictureloadImage) => {
+    if (!isTeacher) return;
+    setEditingImage(img);
+    setEditDraft(editDraftFromImage(img));
+    setEditSaving(false);
+    setEditError(null);
+    setEditPreviewOriginal(false);
+    setEditDrag(null);
+  };
+
+  const closeEditor = () => {
+    if (editSaving) return;
+    setEditingImage(null);
+    setEditError(null);
+    setEditPreviewOriginal(false);
+    setEditDrag(null);
+  };
+
+  const patchEditDraft = (patch: Partial<ImageEditDraft>) => {
+    setEditDraft((prev) => ({
+      ...prev,
+      ...patch,
+      rotation: patch.rotation !== undefined ? normalizeRotation(patch.rotation) : prev.rotation,
+      scale: patch.scale !== undefined ? clampScale(patch.scale) : prev.scale,
+    }));
+  };
 
   const goLightbox = useCallback(
     (delta: number) => {
@@ -252,6 +336,16 @@ export default function Pictureload({
   }, [lightbox, goLightbox]);
 
   useEffect(() => {
+    if (!editingImage) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeEditor();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingImage, editSaving]);
+
+  useEffect(() => {
     void reload();
     const channel = supabase
       .channel(`pictureload-${sessionId}`)
@@ -290,6 +384,30 @@ export default function Pictureload({
       return;
     }
     await reload();
+  };
+
+  const saveImageEdit = async () => {
+    if (!isTeacher || !editingImage || editSaving) return;
+    setEditSaving(true);
+    setEditError(null);
+    const payload = {
+      rotation: normalizeRotation(editDraft.rotation),
+      scale: clampScale(editDraft.scale),
+      offset_x: editDraft.offsetX,
+      offset_y: editDraft.offsetY,
+      crop_data: editDraft.cropData,
+    };
+    const { error } = await supabase.from('pictureload_images').update(payload).eq('id', editingImage.id);
+    if (error) {
+      console.error(error);
+      setEditError(error.message || 'Bearbeitung konnte nicht gespeichert werden.');
+      setEditSaving(false);
+      return;
+    }
+    await reload();
+    setEditSaving(false);
+    setEditingImage(null);
+    setEditPreviewOriginal(false);
   };
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -728,8 +846,9 @@ export default function Pictureload({
                     <img
                       src={url}
                       alt=""
-                      className="max-h-full max-w-full object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+                      className="max-h-full max-w-full object-contain transition-transform duration-200 group-hover:brightness-[1.03]"
                       loading="lazy"
+                      style={pictureloadImageTransform(img.edit)}
                     />
                   </button>
                   {isTeacher && (
@@ -759,6 +878,15 @@ export default function Pictureload({
                   </div>
                   {isTeacher && (
                     <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        disabled={bulkBusy}
+                        onClick={() => openEditor(img)}
+                        className="inline-flex min-h-[40px] flex-1 items-center justify-center gap-1 rounded-lg bg-blue-600 px-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 sm:flex-none sm:px-3"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Bearbeiten
+                      </button>
                       {img.moderationStatus !== 'approved' && (
                         <button
                           type="button"
@@ -850,6 +978,7 @@ export default function Pictureload({
                 src={publicUrlForPath(lightbox.storagePath)}
                 alt=""
                 className="max-h-[min(82dvh,100%)] max-w-full rounded-lg object-contain shadow-2xl"
+                style={pictureloadImageTransform(lightbox.edit)}
               />
             </div>
           </div>
@@ -898,11 +1027,196 @@ export default function Pictureload({
                   <Trash2 className="h-4 w-4" />
                   Löschen
                 </button>
+                <button
+                  type="button"
+                  onClick={() => openEditor(lightbox)}
+                  className="inline-flex min-h-12 min-w-[44px] items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  Bearbeiten
+                </button>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {editingImage && isTeacher && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/75 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Bild bearbeiten"
+        >
+          <div className="flex max-h-[96dvh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[92dvh] sm:rounded-3xl">
+            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <h2 className="text-lg font-black text-slate-950 sm:text-xl">Bild bearbeiten</h2>
+                <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
+                  Nicht-destruktiv: Original bleibt erhalten, SuS sehen die gespeicherte Ansicht.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={editSaving}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                onClick={closeEditor}
+                aria-label="Schließen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </header>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-h-[18rem] bg-slate-900 p-3 sm:p-4">
+                <div
+                  className="relative flex h-[min(58dvh,42rem)] min-h-[18rem] touch-none select-none items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_center,#334155_0,#0f172a_62%)]"
+                  onPointerDown={(e) => {
+                    if (editPreviewOriginal || editSaving) return;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setEditDrag({
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      startY: e.clientY,
+                      originX: editDraft.offsetX,
+                      originY: editDraft.offsetY,
+                    });
+                  }}
+                  onPointerMove={(e) => {
+                    if (!editDrag || editDrag.pointerId !== e.pointerId) return;
+                    patchEditDraft({
+                      offsetX: editDrag.originX + e.clientX - editDrag.startX,
+                      offsetY: editDrag.originY + e.clientY - editDrag.startY,
+                    });
+                  }}
+                  onPointerUp={(e) => {
+                    if (editDrag?.pointerId === e.pointerId) {
+                      try {
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                      } catch {
+                        /* already released */
+                      }
+                      setEditDrag(null);
+                    }
+                  }}
+                  onPointerCancel={() => setEditDrag(null)}
+                >
+                  <img
+                    src={publicUrlForPath(editingImage.storagePath)}
+                    alt=""
+                    className="max-h-[92%] max-w-[92%] object-contain shadow-2xl"
+                    draggable={false}
+                    style={editPreviewOriginal ? undefined : pictureloadImageTransform(editDraft)}
+                  />
+                  <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1.5 text-xs font-bold text-white">
+                    <Move className="mr-1 inline h-3.5 w-3.5" />
+                    Bild ziehen zum Verschieben
+                  </div>
+                  {editPreviewOriginal && (
+                    <div className="absolute right-3 top-3 rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-900">
+                      Originalansicht
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-t border-slate-200 p-4 lg:border-l lg:border-t-0">
+                <div className="grid grid-cols-2 gap-2">
+                  <ToolButton label="Links drehen" icon={<RotateCcw className="h-5 w-5" />} onClick={() => patchEditDraft({ rotation: editDraft.rotation - 90 })} />
+                  <ToolButton label="Rechts drehen" icon={<RotateCw className="h-5 w-5" />} onClick={() => patchEditDraft({ rotation: editDraft.rotation + 90 })} />
+                  <ToolButton label="Vergrößern" icon={<ZoomIn className="h-5 w-5" />} onClick={() => patchEditDraft({ scale: editDraft.scale + 0.1 })} />
+                  <ToolButton label="Verkleinern" icon={<ZoomOut className="h-5 w-5" />} onClick={() => patchEditDraft({ scale: editDraft.scale - 0.1 })} />
+                </div>
+
+                <label className="block">
+                  <span className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">Zoom</span>
+                  <input
+                    type="range"
+                    min={0.25}
+                    max={4}
+                    step={0.05}
+                    value={editDraft.scale}
+                    onChange={(e) => patchEditDraft({ scale: Number(e.target.value) })}
+                    className="w-full accent-blue-600"
+                  />
+                  <span className="mt-1 block text-sm font-bold tabular-nums text-slate-700">{Math.round(editDraft.scale * 100)} %</span>
+                </label>
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <InfoBox label="Rotation" value={`${normalizeRotation(editDraft.rotation)}°`} />
+                  <InfoBox label="Versatz" value={`${Math.round(editDraft.offsetX)} / ${Math.round(editDraft.offsetY)}`} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditPreviewOriginal((v) => !v)}
+                  className={`min-h-12 rounded-xl border px-3 text-sm font-black ${
+                    editPreviewOriginal ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'
+                  }`}
+                >
+                  Vorher/Nachher anzeigen
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEditDraft(resetEditDraft())}
+                  className="min-h-12 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-800 hover:bg-slate-50"
+                >
+                  Zurücksetzen
+                </button>
+
+                {editError && (
+                  <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700" role="alert">
+                    {editError}
+                  </p>
+                )}
+
+                <div className="mt-auto grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveImageEdit()}
+                    disabled={editSaving}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {editSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
+                    Änderungen speichern
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeEditor}
+                    disabled={editSaving}
+                    className="min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-black text-slate-800 hover:bg-slate-50"
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="font-mono text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
 }

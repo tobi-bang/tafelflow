@@ -125,6 +125,14 @@ export interface WordEntry {
 
 export type PictureloadModerationStatus = 'pending' | 'approved' | 'rejected';
 
+export interface PictureloadImageEdit {
+  rotation: number;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  cropData: Record<string, unknown> | null;
+}
+
 /** Eintrag in der Pictureload-Bilderwand (Datei liegt in Supabase Storage). */
 export interface PictureloadImage {
   id: string;
@@ -135,6 +143,7 @@ export interface PictureloadImage {
   contentType: string;
   createdAt: string;
   moderationStatus: PictureloadModerationStatus;
+  edit: PictureloadImageEdit;
 }
 
 export type BuzzerStatus = 'open' | 'locked';

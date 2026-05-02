@@ -123,6 +123,11 @@ create table if not exists public.pictureload_images (
   author_display_name text,
   content_type text not null default 'image/jpeg',
   moderation_status text not null default 'approved' check (moderation_status in ('pending', 'approved', 'rejected')),
+  rotation integer not null default 0,
+  scale numeric not null default 1,
+  offset_x numeric not null default 0,
+  offset_y numeric not null default 0,
+  crop_data jsonb,
   created_at timestamptz not null default now(),
   unique (session_id, storage_path)
 );

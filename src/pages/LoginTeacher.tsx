@@ -5,6 +5,15 @@ import { requireTeacher } from '../lib/role';
 import { Presentation, LogIn } from 'lucide-react';
 import { motion } from 'motion/react';
 
+function safeRedirectTarget(value: string | null): string {
+  const target = value?.trim() || '/teacher';
+  if (!target.startsWith('/') || target.startsWith('//')) return '/teacher';
+  if (target.startsWith('/login') || target.startsWith('/register') || target.startsWith('/auth/callback')) {
+    return '/teacher';
+  }
+  return target;
+}
+
 export default function LoginTeacher() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,6 +23,7 @@ export default function LoginTeacher() {
   const [sessionBlocked, setSessionBlocked] = useState(false);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const redirectTarget = safeRedirectTarget(searchParams.get('redirect'));
 
   useEffect(() => {
     const errQ = searchParams.get('error');
@@ -41,7 +51,7 @@ export default function LoginTeacher() {
       if (cancelled || !session?.user) return;
       const ok = await requireTeacher();
       if (!cancelled && ok) {
-        navigate('/teacher', { replace: true });
+        navigate(redirectTarget, { replace: true });
         return;
       }
       if (!cancelled && session.user) {
@@ -51,7 +61,7 @@ export default function LoginTeacher() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, redirectTarget]);
 
   const handleSignOutOther = async () => {
     await supabase.auth.signOut();
@@ -77,7 +87,7 @@ export default function LoginTeacher() {
         setError('Kein Lehrkraft-Zugriff. Die Rolle „teacher“ fehlt in der Datenbank (profiles) – bitte Admin informieren.');
         return;
       }
-      navigate('/teacher', { replace: true });
+      navigate(redirectTarget, { replace: true });
     } catch (err) {
       console.error(err);
       setError('Login fehlgeschlagen. E-Mail/Passwort prüfen.');

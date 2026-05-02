@@ -132,6 +132,25 @@ function parsePictureloadModerationStatus(v: unknown): PictureloadImage['moderat
   return 'approved';
 }
 
+function parseFiniteNumber(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseJsonObject(v: unknown): Record<string, unknown> | null {
+  if (!v) return null;
+  if (typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+  if (typeof v === 'string') {
+    try {
+      const parsed = JSON.parse(v) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
 export function rowToPictureloadImage(row: Record<string, unknown>): PictureloadImage {
   return {
     id: String(row.id),
@@ -142,6 +161,13 @@ export function rowToPictureloadImage(row: Record<string, unknown>): Pictureload
     contentType: String(row.content_type ?? 'image/jpeg'),
     createdAt: String(row.created_at ?? ''),
     moderationStatus: parsePictureloadModerationStatus(row.moderation_status),
+    edit: {
+      rotation: parseFiniteNumber(row.rotation, 0),
+      scale: Math.min(4, Math.max(0.25, parseFiniteNumber(row.scale, 1))),
+      offsetX: parseFiniteNumber(row.offset_x, 0),
+      offsetY: parseFiniteNumber(row.offset_y, 0),
+      cropData: parseJsonObject(row.crop_data),
+    },
   };
 }
 
