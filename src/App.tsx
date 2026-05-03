@@ -17,13 +17,14 @@ function hasSession(u: SupabaseUser | null): boolean {
   return Boolean(u?.id);
 }
 
-function TeacherOnlyRoute({ allowed, children }: { allowed: boolean; children: ReactNode }) {
+function TeacherOnlyRoute({ allowed, hasUser, children }: { allowed: boolean; hasUser: boolean; children: ReactNode }) {
   const location = useLocation();
 
   if (allowed) return <>{children}</>;
 
   const redirect = `${location.pathname}${location.search}${location.hash}`;
-  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
+  const notice = hasUser ? '&notice=teacher_required' : '';
+  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}${notice}`} replace />;
 }
 
 export default function App() {
@@ -120,7 +121,15 @@ export default function App() {
           <Route
             path="/pruefungstimer/*"
             element={
-              <TeacherOnlyRoute allowed={teacherRouteAllowed}>
+              <TeacherOnlyRoute allowed={teacherRouteAllowed} hasUser={hasSession(user)}>
+                <ExamTimerPage />
+              </TeacherOnlyRoute>
+            }
+          />
+          <Route
+            path="/pruefungsplaner/*"
+            element={
+              <TeacherOnlyRoute allowed={teacherRouteAllowed} hasUser={hasSession(user)}>
                 <ExamTimerPage />
               </TeacherOnlyRoute>
             }
@@ -128,7 +137,7 @@ export default function App() {
           <Route
             path="/teacher"
             element={
-              <TeacherOnlyRoute allowed={teacherRouteAllowed}>
+              <TeacherOnlyRoute allowed={teacherRouteAllowed} hasUser={hasSession(user)}>
                 <TeacherDashboard />
               </TeacherOnlyRoute>
             }

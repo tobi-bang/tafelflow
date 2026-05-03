@@ -33,6 +33,9 @@ export default function LoginTeacher() {
     if (notice === 'no_teacher') {
       setInfo('Dieses Konto hat keine Lehrkraft-Rolle. Bitte in Supabase profiles.role = teacher setzen oder Support kontaktieren.');
     }
+    if (notice === 'teacher_required') {
+      setError('Zugriff verweigert. Dieses Tool ist nur für Lehrkräfte verfügbar.');
+    }
     if (notice === 'registered') {
       setInfo('Registrierung erfolgreich. Wenn nötig E-Mail bestätigen. Anschließend Rolle „teacher“ setzen lassen, dann anmelden.');
     }
@@ -117,7 +120,7 @@ export default function LoginTeacher() {
 
         {sessionBlocked && (
           <div className="bg-amber-50 text-amber-900 p-4 rounded-xl text-sm font-medium mb-4 border border-amber-200">
-            <p className="mb-3">Du bist angemeldet, aber ohne Lehrkraft-Rolle – das Dashboard ist nicht erreichbar.</p>
+            <p className="mb-3">Du bist angemeldet, aber ohne Lehrkraft-Rolle. Der Prüfungstimer und das Dashboard sind nur für Lehrkräfte verfügbar.</p>
             <button
               type="button"
               onClick={handleSignOutOther}
