@@ -15,11 +15,20 @@ import {
   ZoomIn,
   ZoomOut,
   Layers,
-  Undo2,
   MousePointer2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { fetchBrainstormCanvas, rowToBrainstormCanvas, upsertBrainstormCanvas } from '../lib/brainstormCanvasDb';
+import {
+  BRAINSTORM_CANVAS_MIGRATION_HINT,
+  fetchBrainstormCanvas,
+  rowToBrainstormCanvas,
+  upsertBrainstormCanvas,
+} from '../lib/brainstormCanvasDb';
+import {
+  annotationBounds,
+  findAnnotationAt,
+  moveAnnotation,
+} from '../lib/brainstormCanvasInteraction';
 import {
   BRAINSTORM_CANVAS_HEIGHT,
   BRAINSTORM_CANVAS_WIDTH,
@@ -61,7 +70,7 @@ function clientToCanvas(
   };
 }
 
-function AnnotationSvg({ items }: { items: BrainstormAnnotation[] }) {
+function AnnotationSvgRender({ items }: { items: BrainstormAnnotation[] }) {
   return (
     <svg
       className="pointer-events-none absolute inset-0 h-full w-full"
@@ -106,15 +115,13 @@ function AnnotationSvg({ items }: { items: BrainstormAnnotation[] }) {
           );
         }
         if (a.kind === 'circle' && a.w != null && a.h != null) {
-          const rx = Math.abs(a.w) / 2;
-          const ry = Math.abs(a.h) / 2;
           return (
             <ellipse
               key={a.id}
               cx={a.x + a.w / 2}
               cy={a.y + a.h / 2}
-              rx={rx}
-              ry={ry}
+              rx={Math.abs(a.w) / 2}
+              ry={Math.abs(a.h) / 2}
               fill="none"
               stroke={stroke}
               strokeWidth={sw}
@@ -142,38 +149,20 @@ function AnnotationSvg({ items }: { items: BrainstormAnnotation[] }) {
   );
 }
 
-function TextAnnotations({
-  items,
-  isTeacher,
-  onEdit,
-}: {
-  items: BrainstormAnnotation[];
-  isTeacher: boolean;
-  onEdit: (id: string, text: string) => void;
-}) {
+function SelectionOutline() {
   return (
-    <>
-      {items
-        .filter((a) => a.kind === 'text')
-        .map((a) => (
-          <div
-            key={a.id}
-            className="pointer-events-auto absolute max-w-[280px] rounded-lg border border-slate-300/80 bg-white/95 px-3 py-2 text-base font-medium text-slate-900 shadow-sm"
-            style={{ left: a.x, top: a.y, zIndex: 3 }}
-            contentEditable={isTeacher}
-            suppressContentEditableWarning
-            onBlur={(e) => onEdit(a.id, (e.currentTarget.textContent ?? '').trim() || 'Text')}
-          >
-            {a.text ?? 'Text'}
-          </div>
-        ))}
-    </>
+    <div
+      className="pointer-events-none absolute inset-0 rounded-sm border-2 border-blue-500 ring-2 ring-blue-400/40"
+      aria-hidden
+    />
   );
 }
 
 export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, children }: Props) {
   const [canvas, setCanvas] = useState<BrainstormCanvasState>(() => defaultBrainstormCanvas(sessionId));
+  const [tableReady, setTableReady] = useState(true);
   const [tool, setTool] = useState<BrainstormCanvasTool>('select');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number; x2: number; y2: number } | null>(null);
   const [arrowStart, setArrowStart] = useState<{ x: number; y: number } | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
@@ -185,24 +174,31 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
   const fileRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bgDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const annDragRef = useRef<{ id: string; startX: number; startY: number; snapshot: BrainstormAnnotation[] } | null>(
+    null
+  );
   const drawRef = useRef<{ kind: 'rect' | 'circle' | 'highlight'; startX: number; startY: number } | null>(null);
   const canvasRefState = useRef(canvas);
   canvasRefState.current = canvas;
 
+  const selectedAnnotation = selectedId
+    ? canvas.annotations.find((a) => a.id === selectedId) ?? null
+    : null;
+
   const persist = useCallback(
     (patch: Parameters<typeof upsertBrainstormCanvas>[1]) => {
-      if (!isTeacher) return;
+      if (!isTeacher || !tableReady) return;
       void upsertBrainstormCanvas(sessionId, patch).catch((e) => {
         setStatusMsg(e instanceof Error ? e.message : 'Speichern fehlgeschlagen');
       });
     },
-    [isTeacher, sessionId]
+    [isTeacher, sessionId, tableReady]
   );
 
   const schedulePersist = useCallback(
     (next: BrainstormCanvasState) => {
       setCanvas(next);
-      if (!isTeacher) return;
+      if (!isTeacher || !tableReady) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         void upsertBrainstormCanvas(sessionId, {
@@ -215,26 +211,26 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
         }).catch((e) => {
           setStatusMsg(e instanceof Error ? e.message : 'Speichern fehlgeschlagen');
         });
-      }, 380);
+      }, 320);
     },
-    [isTeacher, sessionId]
+    [isTeacher, sessionId, tableReady]
   );
 
   useEffect(() => {
     let cancelled = false;
-    void fetchBrainstormCanvas(sessionId)
-      .then((c) => {
-        if (!cancelled) setCanvas(c);
-      })
-      .catch(() => {
-        if (!cancelled) setCanvas(defaultBrainstormCanvas(sessionId));
-      });
+    void fetchBrainstormCanvas(sessionId).then(({ state, tableMissing }) => {
+      if (cancelled) return;
+      setCanvas(state);
+      setTableReady(!tableMissing);
+      if (tableMissing) setStatusMsg(BRAINSTORM_CANVAS_MIGRATION_HINT);
+    });
     return () => {
       cancelled = true;
     };
   }, [sessionId]);
 
   useEffect(() => {
+    if (!tableReady) return;
     const channel = supabase
       .channel(`brainstorm_canvas:${sessionId}`)
       .on(
@@ -265,12 +261,32 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [sessionId]);
+  }, [sessionId, tableReady]);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      const t = e.target as HTMLElement;
+      if (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+      if (!selectedId) return;
+      e.preventDefault();
+      const next = {
+        ...canvasRefState.current,
+        annotations: canvasRefState.current.annotations.filter((a) => a.id !== selectedId),
+      };
+      setSelectedId(null);
+      schedulePersist(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTeacher, selectedId, schedulePersist]);
 
   const pushAnnotation = useCallback(
     (ann: BrainstormAnnotation) => {
       const next = { ...canvasRefState.current, annotations: [...canvasRefState.current.annotations, ann] };
       schedulePersist(next);
+      setSelectedId(ann.id);
     },
     [schedulePersist]
   );
@@ -283,25 +299,87 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     [schedulePersist]
   );
 
-  const handleCanvasPointerDown = (e: React.PointerEvent) => {
-    if (!isTeacher || tool === 'select') return;
-    if ((e.target as HTMLElement).closest('[data-brainstorm-sticky]')) return;
+  const deleteSelected = useCallback(() => {
+    if (!selectedId) return;
+    const next = {
+      ...canvasRefState.current,
+      annotations: canvasRefState.current.annotations.filter((a) => a.id !== selectedId),
+    };
+    setSelectedId(null);
+    schedulePersist(next);
+  }, [selectedId, schedulePersist]);
+
+  const canvasPoint = (e: React.PointerEvent) => {
     const el = canvasRef.current;
     const vp = viewportRef.current;
-    if (!el) return;
-    const { x, y } = clientToCanvas(e.clientX, e.clientY, el, vp);
+    if (!el) return null;
+    return clientToCanvas(e.clientX, e.clientY, el, vp);
+  };
+
+  const handleSelectPointerDown = (e: React.PointerEvent) => {
+    if (!isTeacher || tool !== 'select') return;
+    if ((e.target as HTMLElement).closest('[data-brainstorm-sticky]')) return;
+    const pt = canvasPoint(e);
+    if (!pt) return;
+
+    const hit = findAnnotationAt(canvas.annotations, pt.x, pt.y);
+    if (hit) {
+      e.stopPropagation();
+      setSelectedId(hit.id);
+      annDragRef.current = {
+        id: hit.id,
+        startX: pt.x,
+        startY: pt.y,
+        snapshot: canvas.annotations,
+      };
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      return;
+    }
+
+    setSelectedId(null);
+  };
+
+  const handleSelectPointerMove = (e: React.PointerEvent) => {
+    const drag = annDragRef.current;
+    if (!drag || tool !== 'select') return;
+    const pt = canvasPoint(e);
+    if (!pt) return;
+    const dx = pt.x - drag.startX;
+    const dy = pt.y - drag.startY;
+    setCanvas((c) => ({
+      ...c,
+      annotations: drag.snapshot.map((a) => (a.id === drag.id ? moveAnnotation(a, dx, dy) : a)),
+    }));
+  };
+
+  const finishAnnotationDrag = () => {
+    if (!annDragRef.current) return;
+    annDragRef.current = null;
+    persist({ annotations: canvasRefState.current.annotations });
+  };
+
+  const handleCanvasPointerDown = (e: React.PointerEvent) => {
+    if (!isTeacher) return;
+    if (tool === 'select') {
+      handleSelectPointerDown(e);
+      return;
+    }
+    if ((e.target as HTMLElement).closest('[data-brainstorm-sticky]')) return;
+    if ((e.target as HTMLElement).closest('[data-brainstorm-annotation]')) return;
+    const pt = canvasPoint(e);
+    if (!pt) return;
 
     if (tool === 'text') {
       const text = window.prompt('Textfeld:', 'Text') ?? '';
       if (!text.trim()) return;
-      pushAnnotation({ id: crypto.randomUUID(), kind: 'text', x, y, text: text.trim() });
+      pushAnnotation({ id: crypto.randomUUID(), kind: 'text', x: pt.x, y: pt.y, text: text.trim() });
       setTool('select');
       return;
     }
 
     if (tool === 'arrow') {
       if (!arrowStart) {
-        setArrowStart({ x, y });
+        setArrowStart({ x: pt.x, y: pt.y });
         return;
       }
       pushAnnotation({
@@ -309,8 +387,8 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
         kind: 'arrow',
         x: arrowStart.x,
         y: arrowStart.y,
-        x2: x,
-        y2: y,
+        x2: pt.x,
+        y2: pt.y,
       });
       setArrowStart(null);
       setTool('select');
@@ -318,22 +396,30 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     }
 
     if (tool === 'rect' || tool === 'circle' || tool === 'highlight') {
-      drawRef.current = { kind: tool, startX: x, startY: y };
-      setDraft({ x, y, x2: x, y2: y });
-      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      drawRef.current = { kind: tool, startX: pt.x, startY: pt.y };
+      setDraft({ x: pt.x, y: pt.y, x2: pt.x, y2: pt.y });
+      setSelectedId(null);
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
   };
 
   const handleCanvasPointerMove = (e: React.PointerEvent) => {
-    const el = canvasRef.current;
-    const vp = viewportRef.current;
-    if (!el || !drawRef.current) return;
-    const { x, y } = clientToCanvas(e.clientX, e.clientY, el, vp);
+    if (tool === 'select') {
+      handleSelectPointerMove(e);
+      return;
+    }
+    if (!drawRef.current) return;
+    const pt = canvasPoint(e);
+    if (!pt) return;
     const d = drawRef.current;
-    setDraft({ x: d.startX, y: d.startY, x2: x, y2: y });
+    setDraft({ x: d.startX, y: d.startY, x2: pt.x, y2: pt.y });
   };
 
   const finishDraw = () => {
+    if (annDragRef.current) {
+      finishAnnotationDrag();
+      return;
+    }
     const d = drawRef.current;
     const dr = draft;
     drawRef.current = null;
@@ -357,8 +443,9 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
   };
 
   const handleBgPointerDown = (e: React.PointerEvent) => {
-    if (!isTeacher || canvas.bgLocked || !canvas.backgroundUrl) return;
+    if (!isTeacher || canvas.bgLocked || !canvas.backgroundUrl || tool !== 'select') return;
     e.stopPropagation();
+    setSelectedId(null);
     bgDragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -385,7 +472,7 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
 
   const onUpload = async (file: File) => {
     setUploadBusy(true);
-    setStatusMsg(null);
+    setStatusMsg(tableReady ? null : BRAINSTORM_CANVAS_MIGRATION_HINT);
     try {
       const oldPath = canvas.backgroundPath;
       const { path, publicUrl } = await uploadBrainstormBackground(sessionId, file);
@@ -399,13 +486,15 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
         bgLocked: false,
       };
       setCanvas(next);
-      await upsertBrainstormCanvas(sessionId, {
-        backgroundPath: path,
-        bgX: next.bgX,
-        bgY: next.bgY,
-        bgScale: next.bgScale,
-        bgLocked: false,
-      });
+      if (tableReady) {
+        await upsertBrainstormCanvas(sessionId, {
+          backgroundPath: path,
+          bgX: next.bgX,
+          bgY: next.bgY,
+          bgScale: next.bgScale,
+          bgLocked: false,
+        });
+      }
       if (oldPath && oldPath !== path) {
         void removeBrainstormBackgroundFile(oldPath).catch(() => undefined);
       }
@@ -421,19 +510,25 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     const path = canvas.backgroundPath;
     const next = defaultBrainstormCanvas(sessionId);
     setCanvas(next);
-    await upsertBrainstormCanvas(sessionId, {
-      backgroundPath: null,
-      bgX: next.bgX,
-      bgY: next.bgY,
-      bgScale: next.bgScale,
-      bgLocked: false,
-      annotations: [],
-    });
+    setSelectedId(null);
+    if (tableReady) {
+      await upsertBrainstormCanvas(sessionId, {
+        backgroundPath: null,
+        bgX: next.bgX,
+        bgY: next.bgY,
+        bgScale: next.bgScale,
+        bgLocked: false,
+        annotations: [],
+      });
+    }
     if (path) void removeBrainstormBackgroundFile(path).catch(() => undefined);
   };
 
   const adjustScale = (delta: number) => {
-    const next = { ...canvasRefState.current, bgScale: Math.min(4, Math.max(0.15, canvasRefState.current.bgScale + delta)) };
+    const next = {
+      ...canvasRefState.current,
+      bgScale: Math.min(4, Math.max(0.15, canvasRefState.current.bgScale + delta)),
+    };
     schedulePersist(next);
   };
 
@@ -459,6 +554,8 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
   };
 
   const svgAnnotations = canvas.annotations.filter((a) => a.kind !== 'text');
+  const textAnnotations = canvas.annotations.filter((a) => a.kind === 'text');
+  const shapeAnnotations = canvas.annotations.filter((a) => a.kind !== 'text');
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-slate-100">
@@ -476,12 +573,7 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
                 if (f) void onUpload(f);
               }}
             />
-            <ToolbarBtn
-              title="Vorlage hochladen"
-              active={false}
-              disabled={uploadBusy}
-              onClick={() => fileRef.current?.click()}
-            >
+            <ToolbarBtn title="Vorlage hochladen" disabled={uploadBusy} onClick={() => fileRef.current?.click()}>
               <ImagePlus className="h-4 w-4" />
             </ToolbarBtn>
             <ToolbarBtn title={canvas.bgLocked ? 'Vorlage entsperren' : 'Vorlage sperren'} onClick={toggleLock}>
@@ -494,13 +586,30 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
               <ZoomIn className="h-4 w-4" />
             </ToolbarBtn>
             <span className="mx-0.5 h-5 w-px shrink-0 bg-slate-200" />
-            <ToolbarBtn title="Auswahl" active={tool === 'select'} onClick={() => { setTool('select'); setArrowStart(null); }}>
+            <ToolbarBtn
+              title="Auswahl (Entf = löschen)"
+              active={tool === 'select'}
+              onClick={() => {
+                setTool('select');
+                setArrowStart(null);
+              }}
+            >
               <MousePointer2 className="h-4 w-4" />
+            </ToolbarBtn>
+            <ToolbarBtn title="Auswahl löschen" disabled={!selectedId} onClick={deleteSelected}>
+              <Trash2 className="h-4 w-4" />
             </ToolbarBtn>
             <ToolbarBtn title="Textfeld" active={tool === 'text'} onClick={() => setTool('text')}>
               <Type className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="Pfeil (2× klicken)" active={tool === 'arrow'} onClick={() => { setTool('arrow'); setArrowStart(null); }}>
+            <ToolbarBtn
+              title="Pfeil (2× klicken)"
+              active={tool === 'arrow'}
+              onClick={() => {
+                setTool('arrow');
+                setArrowStart(null);
+              }}
+            >
               <ArrowRight className="h-4 w-4" />
             </ToolbarBtn>
             <ToolbarBtn title="Rechteck" active={tool === 'rect'} onClick={() => setTool('rect')}>
@@ -511,13 +620,6 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             </ToolbarBtn>
             <ToolbarBtn title="Hervorheben" active={tool === 'highlight'} onClick={() => setTool('highlight')}>
               <Highlighter className="h-4 w-4" />
-            </ToolbarBtn>
-            <ToolbarBtn
-              title="Letzte Markierung"
-              onClick={() => updateAnnotations((list) => list.slice(0, -1))}
-              disabled={canvas.annotations.length === 0}
-            >
-              <Undo2 className="h-4 w-4" />
             </ToolbarBtn>
             {onAddHeading && (
               <ToolbarBtn title="Überschrift" onClick={onAddHeading}>
@@ -539,8 +641,18 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             </ToolbarBtn>
           </div>
           {statusMsg && <p className="mt-1 truncate px-1 text-xs text-amber-800">{statusMsg}</p>}
+          {tool === 'select' && selectedAnnotation && (
+            <p className="mt-0.5 px-1 text-xs text-slate-500">
+              Ausgewählt: {selectedAnnotation.kind} — ziehen zum Verschieben, Entf oder Papierkorb zum Löschen
+            </p>
+          )}
           {arrowStart && tool === 'arrow' && (
             <p className="mt-0.5 px-1 text-xs text-slate-500">Pfeil: Zielpunkt auf der Fläche anklicken</p>
+          )}
+          {!tableReady && (
+            <p className="mt-0.5 px-1 text-xs font-medium text-red-700">
+              Speichern deaktiviert, bis Migration 017 ausgeführt ist.
+            </p>
           )}
         </div>
       )}
@@ -564,42 +676,111 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
         >
           {canvas.backgroundUrl && (
             <div
-              className="absolute select-none"
+              className="pointer-events-none absolute select-none"
               style={{
                 left: canvas.bgX,
                 top: canvas.bgY,
                 zIndex: 1,
                 transform: `scale(${canvas.bgScale})`,
                 transformOrigin: 'top left',
-                cursor: isTeacher && !canvas.bgLocked ? 'grab' : 'default',
               }}
-              onPointerDown={handleBgPointerDown}
-              onPointerMove={handleBgPointerMove}
-              onPointerUp={handleBgPointerUp}
-              onPointerCancel={handleBgPointerUp}
             >
               <img
                 src={canvas.backgroundUrl}
                 alt=""
                 draggable={false}
                 className="max-w-none rounded-sm shadow-sm"
-                style={{ maxHeight: BRAINSTORM_CANVAS_HEIGHT * 0.95 }}
+                style={{
+                  maxHeight: BRAINSTORM_CANVAS_HEIGHT * 0.95,
+                  pointerEvents:
+                    isTeacher && !canvas.bgLocked && tool === 'select' ? 'auto' : 'none',
+                  cursor: isTeacher && !canvas.bgLocked && tool === 'select' ? 'grab' : 'default',
+                }}
                 crossOrigin="anonymous"
+                onPointerDown={handleBgPointerDown}
+                onPointerMove={handleBgPointerMove}
+                onPointerUp={handleBgPointerUp}
+                onPointerCancel={handleBgPointerUp}
               />
             </div>
           )}
 
-          <AnnotationSvg items={svgAnnotations} />
-          <TextAnnotations
-            items={canvas.annotations}
-            isTeacher={isTeacher}
-            onEdit={(id, text) =>
-              updateAnnotations((list) => list.map((a) => (a.id === id ? { ...a, text } : a)))
-            }
-          />
+          <AnnotationSvgRender items={svgAnnotations} />
+
+          {/* Trefferflächen + Text (über Hintergrund, unter Stickies) */}
+          <div className="absolute inset-0" style={{ zIndex: 6 }}>
+            {shapeAnnotations.map((a) => {
+              const b = annotationBounds(a);
+              const w = b.right - b.left;
+              const h = b.bottom - b.top;
+              const selected = selectedId === a.id;
+              return (
+                <div
+                  key={a.id}
+                  data-brainstorm-annotation={a.id}
+                  className={`absolute touch-none ${isTeacher && tool === 'select' ? 'cursor-move' : 'pointer-events-none'}`}
+                  style={{ left: b.left, top: b.top, width: w, height: h }}
+                  onPointerDown={(e) => {
+                    if (tool !== 'select' || !isTeacher) return;
+                    e.stopPropagation();
+                    setSelectedId(a.id);
+                    const pt = canvasPoint(e);
+                    if (!pt) return;
+                    annDragRef.current = {
+                      id: a.id,
+                      startX: pt.x,
+                      startY: pt.y,
+                      snapshot: canvasRefState.current.annotations,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                >
+                  {selected && <SelectionOutline />}
+                </div>
+              );
+            })}
+            {textAnnotations.map((a) => {
+              const selected = selectedId === a.id;
+              return (
+                <div
+                  key={a.id}
+                  data-brainstorm-annotation={a.id}
+                  className={`absolute max-w-[280px] rounded-lg border bg-white/95 px-3 py-2 text-base font-medium text-slate-900 shadow-sm touch-none ${
+                    selected ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-slate-300/80'
+                  } ${isTeacher && tool === 'select' ? 'cursor-move' : ''}`}
+                  style={{ left: a.x, top: a.y }}
+                  contentEditable={isTeacher && tool === 'select'}
+                  suppressContentEditableWarning
+                  onBlur={(e) =>
+                    updateAnnotations((list) =>
+                      list.map((x) =>
+                        x.id === a.id ? { ...x, text: (e.currentTarget.textContent ?? '').trim() || 'Text' } : x
+                      )
+                    )
+                  }
+                  onPointerDown={(e) => {
+                    if (tool !== 'select' || !isTeacher) return;
+                    e.stopPropagation();
+                    setSelectedId(a.id);
+                    const pt = canvasPoint(e);
+                    if (!pt) return;
+                    annDragRef.current = {
+                      id: a.id,
+                      startX: pt.x,
+                      startY: pt.y,
+                      snapshot: canvasRefState.current.annotations,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                >
+                  {a.text ?? 'Text'}
+                </div>
+              );
+            })}
+          </div>
 
           {draft && (
-            <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 2 }} aria-hidden>
+            <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 7 }} aria-hidden>
               {drawRef.current?.kind === 'highlight' ? (
                 <rect
                   x={Math.min(draft.x, draft.x2)}
@@ -637,11 +818,11 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
           {arrowStart && tool === 'arrow' && (
             <div
               className="pointer-events-none absolute h-3 w-3 rounded-full bg-blue-600 ring-2 ring-white"
-              style={{ left: arrowStart.x - 6, top: arrowStart.y - 6, zIndex: 2 }}
+              style={{ left: arrowStart.x - 6, top: arrowStart.y - 6, zIndex: 7 }}
             />
           )}
 
-          <div className="pointer-events-none absolute inset-0" style={{ zIndex: 4 }}>
+          <div className="pointer-events-none absolute inset-0" style={{ zIndex: 10 }}>
             {children}
           </div>
         </div>

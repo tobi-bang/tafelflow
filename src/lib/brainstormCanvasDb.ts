@@ -6,7 +6,11 @@ import {
   type BrainstormAnnotation,
   type BrainstormCanvasState,
 } from './brainstormCanvasTypes';
+import { isBrainstormCanvasTableMissing } from './brainstormCanvasInteraction';
 import { publicUrlForBrainstormPath } from './brainstormStorage';
+
+export const BRAINSTORM_CANVAS_MIGRATION_HINT =
+  'Tabelle public.brainstorm_canvas fehlt. Bitte supabase/migrations/017_brainstorm_canvas_table.sql im Supabase SQL Editor ausführen.';
 
 export function rowToBrainstormCanvas(row: Record<string, unknown>): BrainstormCanvasState {
   const sessionId = String(row.session_id ?? '');
@@ -24,15 +28,23 @@ export function rowToBrainstormCanvas(row: Record<string, unknown>): BrainstormC
   };
 }
 
-export async function fetchBrainstormCanvas(sessionId: string): Promise<BrainstormCanvasState> {
+export async function fetchBrainstormCanvas(sessionId: string): Promise<{
+  state: BrainstormCanvasState;
+  tableMissing: boolean;
+}> {
   const { data, error } = await supabase
     .from('brainstorm_canvas')
     .select('*')
     .eq('session_id', sessionId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) return defaultBrainstormCanvas(sessionId);
-  return rowToBrainstormCanvas(data as Record<string, unknown>);
+  if (error) {
+    if (isBrainstormCanvasTableMissing(error.message)) {
+      return { state: defaultBrainstormCanvas(sessionId), tableMissing: true };
+    }
+    throw new Error(error.message);
+  }
+  if (!data) return { state: defaultBrainstormCanvas(sessionId), tableMissing: false };
+  return { state: rowToBrainstormCanvas(data as Record<string, unknown>), tableMissing: false };
 }
 
 export type BrainstormCanvasPatch = Partial<{
@@ -57,5 +69,10 @@ export async function upsertBrainstormCanvas(sessionId: string, patch: Brainstor
   if (patch.annotations !== undefined) row.annotations = patch.annotations;
 
   const { error } = await supabase.from('brainstorm_canvas').upsert(row, { onConflict: 'session_id' });
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isBrainstormCanvasTableMissing(error.message)) {
+      throw new Error(BRAINSTORM_CANVAS_MIGRATION_HINT);
+    }
+    throw new Error(error.message);
+  }
 }

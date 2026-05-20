@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY: string;
   /** Optional: Supabase Storage Bucket-ID für Pictureload (Standard: pictureload) */
   readonly VITE_SUPABASE_STORAGE_BUCKET_PICTURELOAD?: string;
+  /** Optional: Supabase Storage Bucket-ID für Ideenwand-Hintergrund (Standard: brainstorm-templates) */
+  readonly VITE_SUPABASE_STORAGE_BUCKET_BRAINSTORM?: string;
 }
 
 interface ImportMeta {

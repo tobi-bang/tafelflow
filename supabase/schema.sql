@@ -794,6 +794,18 @@ create policy "brainstorm_storage_insert"
     and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
   );
 
+create policy "brainstorm_storage_update"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'brainstorm-templates'
+    and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+  )
+  with check (
+    bucket_id = 'brainstorm-templates'
+    and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+  );
+
 create policy "brainstorm_storage_delete"
   on storage.objects for delete
   to authenticated
