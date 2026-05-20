@@ -34,7 +34,8 @@ create table if not exists public.sessions (
     "pictureloadModeration": false,
     "buzzer": true,
     "ideasRequireDisplayName": true,
-    "ideasDefaultScale": 1.35
+    "ideasDefaultScale": 1.35,
+    "ideasStudentBoardView": false
   }'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -273,7 +274,7 @@ begin
     trim(p_name),
     'active',
     false,
-    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"pictureload":true,"pictureloadModeration":false,"buzzer":true,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35}'::jsonb
+    '{"writeBoard":true,"drawBoard":true,"addSticky":true,"moveSticky":true,"organizeBrainstorm":true,"answerPoll":true,"submitWord":true,"livePoll":true,"peerFeedback":true,"pictureload":true,"pictureloadModeration":false,"buzzer":true,"ideasRequireDisplayName":true,"ideasDefaultScale":1.35,"ideasStudentBoardView":false}'::jsonb
   )
   returning id into new_id;
 

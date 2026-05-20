@@ -35,6 +35,7 @@ export function normalizeSessionPermissions(raw: unknown): SessionPermissions {
       if (Number.isFinite(n)) return Math.min(4, Math.max(0.5, n));
       return 1.35;
     })(),
+    ideasStudentBoardView: p.ideasStudentBoardView === true,
   };
 }
 

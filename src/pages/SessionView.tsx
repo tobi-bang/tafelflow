@@ -1002,6 +1002,33 @@ export default function SessionView() {
                   active={session.permissions.ideasRequireDisplayName}
                   onClick={() => togglePermission('ideasRequireDisplayName')}
                 />
+                <button
+                  type="button"
+                  onClick={() => togglePermission('ideasStudentBoardView')}
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all ${
+                    session.permissions.ideasStudentBoardView
+                      ? 'border-blue-100 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <span className="block font-semibold">SuS sehen Klassenideen</span>
+                    <span className="mt-1 block text-xs font-normal opacity-90">
+                      Wenn aktiv, sehen SuS freigegebene Ideen auf dem eigenen Gerät.
+                    </span>
+                  </div>
+                  <div
+                    className={`relative h-5 w-10 shrink-0 rounded-full transition-colors ${
+                      session.permissions.ideasStudentBoardView ? 'bg-blue-600' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-1 h-3 w-3 rounded-full bg-white transition-all ${
+                        session.permissions.ideasStudentBoardView ? 'right-1' : 'left-1'
+                      }`}
+                    />
+                  </div>
+                </button>
                 <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 text-left">
                   <label htmlFor="ideas-default-scale" className="font-semibold text-slate-800 block mb-2">
                     Standardgröße neuer Ideen (Board)

@@ -6,6 +6,7 @@ import type { StickyNote, SessionPermissions } from '../types';
 import { Plus, Trash2, Check, Layers, GripVertical, ChevronDown, Info } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { BrainstormVisualCanvas } from './BrainstormVisualCanvas';
+import { BrainstormStudentView } from './BrainstormStudentView';
 
 /** Basisbreite der Ideenkarte in px (wird mit display_scale multipliziert). */
 const IDEA_CARD_BASE_PX = 320;
@@ -223,6 +224,8 @@ export default function Brainstorming({
 
   const showAuthorOnStickies = permissions.ideasRequireDisplayName;
   const defaultIdeaScale = clampDisplayScale(permissions.ideasDefaultScale);
+  const showStudentClassIdeas = permissions.ideasStudentBoardView;
+  const useStudentMobile = !isTeacher && !presentationMode;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUserId(user?.id ?? null));
@@ -610,6 +613,33 @@ export default function Brainstorming({
           </div>
         )}
       </div>
+    );
+  }
+
+  if (useStudentMobile) {
+    const addModal = isAdding ? (
+      <StickyFormModal
+        title="Neue Idee senden"
+        value={newContent}
+        onChange={setNewContent}
+        onSubmit={addSticky}
+        onClose={() => setIsAdding(false)}
+        selectedColor={selectedColor}
+        onPickColor={setSelectedColor}
+      />
+    ) : null;
+
+    return (
+      <BrainstormStudentView
+        stickies={stickies}
+        userId={userId}
+        canAdd={canAdd}
+        showClassIdeas={showStudentClassIdeas}
+        showAuthorOnStickies={showAuthorOnStickies}
+        isAdding={isAdding}
+        onOpenAdd={() => setIsAdding(true)}
+        addModal={addModal}
+      />
     );
   }
 

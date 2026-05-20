@@ -26,6 +26,11 @@ export interface SessionPermissions {
   ideasRequireDisplayName: boolean;
   /** Standard-display_scale (0.5–4) für neu erstellte Ideenkarten. */
   ideasDefaultScale: number;
+  /**
+   * Wenn true: SuS sehen auf dem eigenen Gerät freigegebene Klassenideen (nur lesend).
+   * Standard: false.
+   */
+  ideasStudentBoardView: boolean;
 }
 
 export interface Session {
