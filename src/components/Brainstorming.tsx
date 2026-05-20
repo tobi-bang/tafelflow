@@ -5,6 +5,7 @@ import { rowToSticky } from '../lib/dbMap';
 import type { StickyNote, SessionPermissions } from '../types';
 import { Plus, Trash2, Check, Layers, GripVertical, ChevronDown, Info } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
+import { BrainstormVisualCanvas } from './BrainstormVisualCanvas';
 
 /** Basisbreite der Ideenkarte in px (wird mit display_scale multipliziert). */
 const IDEA_CARD_BASE_PX = 320;
@@ -613,18 +614,12 @@ export default function Brainstorming({
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-slate-100 p-3 sm:p-6 md:p-8">
-      <div className="w-full h-full relative">
-        {isTeacher && (
-          <button
-            type="button"
-            onClick={() => setIsAddingHeading(true)}
-            className="absolute top-2 left-2 z-40 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-700 text-white text-sm font-semibold hover:bg-slate-800 shadow"
-          >
-            <Layers className="w-4 h-4" />
-            Überschrift
-          </button>
-        )}
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <BrainstormVisualCanvas
+        sessionId={sessionId}
+        isTeacher={isTeacher}
+        onAddHeading={isTeacher ? () => setIsAddingHeading(true) : undefined}
+      >
         <AnimatePresence>
           {visible.map((sticky) => {
             const canDrag =
@@ -665,7 +660,7 @@ export default function Brainstorming({
             );
           })}
         </AnimatePresence>
-      </div>
+      </BrainstormVisualCanvas>
 
       {canAdd && (
         <button
@@ -773,7 +768,8 @@ function DraggableBoardSticky({
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1, x: sticky.x, y: sticky.y }}
       exit={{ opacity: 0, scale: 0.85 }}
-      className="absolute flex flex-col items-stretch gap-0 select-none"
+      data-brainstorm-sticky
+      className="pointer-events-auto absolute flex flex-col items-stretch gap-0 select-none"
       style={{ zIndex: isHeading ? 5 : 4 }}
     >
       {canDrag && (

@@ -81,6 +81,19 @@ create index if not exists idx_stickies_heading on public.stickies(under_heading
 
 create index if not exists idx_stickies_session on public.stickies(session_id);
 
+create table if not exists public.brainstorm_canvas (
+  session_id uuid primary key references public.sessions(id) on delete cascade,
+  background_path text,
+  bg_x double precision not null default 80,
+  bg_y double precision not null default 80,
+  bg_scale double precision not null default 1 check (bg_scale >= 0.15 and bg_scale <= 4),
+  bg_locked boolean not null default false,
+  annotations jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_brainstorm_canvas_updated on public.brainstorm_canvas(updated_at desc);
+
 create table if not exists public.polls (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references public.sessions(id) on delete cascade,
@@ -445,7 +458,7 @@ create trigger on_auth_user_created
 -- Realtime: Unter Database → Replication in Supabase die Tabellen aktivieren
 -- oder einzeln (bei Fehler „already member“ ignorieren):
 --   alter publication supabase_realtime add table public.sessions;
---   ... board_objects, stickies, polls, poll_responses, words, pictureload_images,
+--   ... board_objects, stickies, brainstorm_canvas, polls, poll_responses, words, pictureload_images,
 --   buzzer_sessions, buzzer_events, buzzer_participants
 -- ---------------------------------------------------------------------------
 
@@ -458,6 +471,7 @@ alter table public.profiles enable row level security;
 alter table public.session_members enable row level security;
 alter table public.board_objects enable row level security;
 alter table public.stickies enable row level security;
+alter table public.brainstorm_canvas enable row level security;
 alter table public.polls enable row level security;
 alter table public.poll_responses enable row level security;
 alter table public.words enable row level security;
@@ -579,6 +593,24 @@ create policy "stickies_update_rules"
 
 create policy "stickies_delete_teacher"
   on public.stickies for delete
+  using (public.is_session_teacher(session_id, auth.uid()));
+
+-- brainstorm_canvas (Ideenwand: Vorlage + Lehrer-Annotationen)
+create policy "brainstorm_canvas_select_member"
+  on public.brainstorm_canvas for select
+  using (public.is_session_member(session_id, auth.uid()));
+
+create policy "brainstorm_canvas_upsert_teacher"
+  on public.brainstorm_canvas for insert
+  with check (public.is_session_teacher(session_id, auth.uid()));
+
+create policy "brainstorm_canvas_update_teacher"
+  on public.brainstorm_canvas for update
+  using (public.is_session_teacher(session_id, auth.uid()))
+  with check (public.is_session_teacher(session_id, auth.uid()));
+
+create policy "brainstorm_canvas_delete_teacher"
+  on public.brainstorm_canvas for delete
   using (public.is_session_teacher(session_id, auth.uid()));
 
 -- polls
@@ -738,6 +770,34 @@ create policy "pictureload_storage_delete"
   to authenticated
   using (
     bucket_id = 'pictureload'
+    and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+  );
+
+-- brainstorm-templates (Ideenwand-Hintergrund)
+insert into storage.buckets (id, name, public)
+values ('brainstorm-templates', 'brainstorm-templates', true)
+on conflict (id) do update
+  set public = excluded.public,
+      name = excluded.name;
+
+create policy "brainstorm_storage_select"
+  on storage.objects for select
+  using (bucket_id = 'brainstorm-templates');
+
+create policy "brainstorm_storage_insert"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'brainstorm-templates'
+    and split_part(name, '/', 1) <> ''
+    and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
+  );
+
+create policy "brainstorm_storage_delete"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'brainstorm-templates'
     and public.is_session_teacher(split_part(name, '/', 1)::uuid, auth.uid())
   );
 

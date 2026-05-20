@@ -22,9 +22,13 @@ function TeacherOnlyRoute({ allowed, hasUser, children }: { allowed: boolean; ha
 
   if (allowed) return <>{children}</>;
 
+  /** Angemeldet, aber keine Lehrkraft-Rolle: kein Timer, keine Lehrkraft-Login-Maske — zurück zur Startseite. */
+  if (hasUser) {
+    return <Navigate to="/" replace />;
+  }
+
   const redirect = `${location.pathname}${location.search}${location.hash}`;
-  const notice = hasUser ? '&notice=teacher_required' : '';
-  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}${notice}`} replace />;
+  return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
 }
 
 export default function App() {

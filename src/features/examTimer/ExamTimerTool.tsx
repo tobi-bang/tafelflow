@@ -162,7 +162,7 @@ function normalizeState(value: SplitScreenSession): SplitScreenSession {
   return {
     mode: value.mode === 'split' ? 'split' : 'single',
     activePane: value.activePane === 'B' ? 'B' : 'A',
-    boardMode: Boolean(value.setup && value.boardMode),
+    boardMode: Boolean(value.boardMode),
     highContrast: Boolean(value.highContrast),
     syncControlEnabled: value.mode === 'split' && Boolean(value.syncControlEnabled),
     syncNotice: null,
@@ -429,9 +429,13 @@ function SegmentIcon({ name, className = 'h-5 w-5' }: { name: ExamIconName; clas
   return <Icon className={className} aria-hidden />;
 }
 
-export default function ExamTimerTool() {
+export default function ExamTimerTool({ initialOpenBoard = false }: { initialOpenBoard?: boolean }) {
   const navigate = useNavigate();
-  const [state, setState] = useState<SplitScreenSession>(readInitialState);
+  const [state, setState] = useState<SplitScreenSession>(() => {
+    const base = readInitialState();
+    if (!initialOpenBoard) return base;
+    return { ...base, boardMode: true };
+  });
   const [customTemplates, setCustomTemplates] = useState<ExamTemplate[]>(readCustomTemplates);
   const [now, setNow] = useState(Date.now());
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
