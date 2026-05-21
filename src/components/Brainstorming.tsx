@@ -7,6 +7,7 @@ import { Plus, Trash2, Check, Layers, GripVertical, ChevronDown, Info } from 'lu
 import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { BrainstormVisualCanvas } from './BrainstormVisualCanvas';
 import { BrainstormStudentView } from './BrainstormStudentView';
+import { stickySelectId } from '../lib/brainstormCanvasTypes';
 
 /** Basisbreite der Ideenkarte in px (wird mit display_scale multipliziert). */
 const IDEA_CARD_BASE_PX = 320;
@@ -216,6 +217,7 @@ export default function Brainstorming({
   const [selectedColor, setSelectedColor] = useState('#fef08a');
   const [userId, setUserId] = useState<string | null>(null);
   const [resizePreview, setResizePreview] = useState<{ id: string; scale: number } | null>(null);
+  const [canvasSelectedId, setCanvasSelectedId] = useState<string | null>(null);
 
   const canAdd = isTeacher || permissions.addSticky;
   const canMoveAny = isTeacher || permissions.moveSticky;
@@ -420,6 +422,27 @@ export default function Brainstorming({
   const approveSticky = async (id: string) => {
     if (!isTeacher) return;
     await supabase.from('stickies').update({ status: 'published' }).eq('id', id);
+  };
+
+  const duplicateSticky = async (id: string) => {
+    if (!isTeacher) return;
+    const src = stickies.find((s) => s.id === id);
+    if (!src || src.stickyType !== 'note') return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from('stickies').insert({
+      session_id: sessionId,
+      content: src.content,
+      color: src.color,
+      author_name: src.authorName,
+      author_id: user.id,
+      x: src.x + 28,
+      y: src.y + 28,
+      status: src.status,
+      sticky_type: 'note',
+      display_scale: src.displayScale,
+    });
+    if (error) console.error(error);
   };
 
   if (presentationMode) {
@@ -665,6 +688,8 @@ export default function Brainstorming({
                 <DraggableBoardSticky
                   sticky={sticky}
                   displayScale={liveScale}
+                  isCanvasSelected={canvasSelectedId === stickySelectId(sticky.id)}
+                  onCanvasSelect={() => setCanvasSelectedId(stickySelectId(sticky.id))}
                   canDrag={canDrag}
                   isTeacher={isTeacher}
                   canModerate={canModerate}
@@ -757,6 +782,8 @@ export default function Brainstorming({
 function DraggableBoardSticky({
   sticky,
   displayScale,
+  isCanvasSelected = false,
+  onCanvasSelect,
   canDrag,
   isTeacher,
   canModerate,
@@ -799,8 +826,14 @@ function DraggableBoardSticky({
       animate={{ opacity: 1, scale: 1, x: sticky.x, y: sticky.y }}
       exit={{ opacity: 0, scale: 0.85 }}
       data-brainstorm-sticky
-      className="pointer-events-auto absolute flex flex-col items-stretch gap-0 select-none"
-      style={{ zIndex: isHeading ? 5 : 4 }}
+      className={`pointer-events-auto absolute flex flex-col items-stretch gap-0 select-none ${
+        isCanvasSelected ? 'ring-2 ring-blue-500 ring-offset-2 rounded-lg' : ''
+      }`}
+      style={{ zIndex: isHeading ? 12 : 11 }}
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest('[data-resize-handle]')) return;
+        onCanvasSelect?.();
+      }}
     >
       {canDrag && (
         <div

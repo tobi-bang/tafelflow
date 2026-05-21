@@ -13,11 +13,27 @@ export type BrainstormAnnotation = {
   x2?: number;
   y2?: number;
   text?: string;
+  /** Rahmen-/Linienfarbe (Legacy: color) */
   color?: string;
+  stroke?: string;
+  fill?: string;
   strokeWidth?: number;
-  /** Grad, für Export / spätere Rotation */
+  fontSize?: number;
+  opacity?: number;
+  zIndex?: number;
   rotation?: number;
 };
+
+export const STICKY_SELECT_PREFIX = 'sticky:';
+
+export function stickySelectId(stickyId: string): string {
+  return `${STICKY_SELECT_PREFIX}${stickyId}`;
+}
+
+export function parseStickySelectId(id: string | null): string | null {
+  if (!id?.startsWith(STICKY_SELECT_PREFIX)) return null;
+  return id.slice(STICKY_SELECT_PREFIX.length);
+}
 
 export type ResizeHandleId =
   | 'nw'
@@ -62,9 +78,29 @@ export function defaultBrainstormCanvas(sessionId: string): BrainstormCanvasStat
     bgY: 80,
     bgScale: 1,
     bgLocked: false,
+    bgRotation: 0,
     annotations: [],
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function sortAnnotationsByZIndex(items: BrainstormAnnotation[]): BrainstormAnnotation[] {
+  return [...items].sort((a, b) => (a.zIndex ?? 1) - (b.zIndex ?? 1));
+}
+
+export function nextZIndex(items: BrainstormAnnotation[]): number {
+  return items.reduce((m, a) => Math.max(m, a.zIndex ?? 1), 0) + 1;
+}
+
+export function strokeOf(a: BrainstormAnnotation): string {
+  return a.stroke ?? a.color ?? '#1e293b';
+}
+
+export function fillOf(a: BrainstormAnnotation): string {
+  if (a.fill) return a.fill;
+  if (a.kind === 'highlight') return '#facc15';
+  if (a.kind === 'text') return '#ffffff';
+  return 'transparent';
 }
 
 function isAnnotationKind(v: unknown): v is BrainstormAnnotationKind {
@@ -94,7 +130,12 @@ export function parseAnnotations(raw: unknown): BrainstormAnnotation[] {
       y2: Number.isFinite(Number(o.y2)) ? Number(o.y2) : undefined,
       text: typeof o.text === 'string' ? o.text : undefined,
       color: typeof o.color === 'string' ? o.color : undefined,
+      stroke: typeof o.stroke === 'string' ? o.stroke : undefined,
+      fill: typeof o.fill === 'string' ? o.fill : undefined,
       strokeWidth: Number.isFinite(Number(o.strokeWidth)) ? Number(o.strokeWidth) : undefined,
+      fontSize: Number.isFinite(Number(o.fontSize)) ? Number(o.fontSize) : undefined,
+      opacity: Number.isFinite(Number(o.opacity)) ? Math.min(1, Math.max(0, Number(o.opacity))) : undefined,
+      zIndex: Number.isFinite(Number(o.zIndex)) ? Number(o.zIndex) : undefined,
       rotation: Number.isFinite(Number(o.rotation)) ? Number(o.rotation) : undefined,
     });
   }

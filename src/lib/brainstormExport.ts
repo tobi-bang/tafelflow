@@ -1,5 +1,6 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { createSanitizedExportClone, removeExportClone } from './brainstormExportSanitize';
 
 export const BRAINSTORM_EXPORT_ROOT_SELECTOR = '[data-brainstorm-export-root]';
 
@@ -8,7 +9,7 @@ export async function waitForBrainstormExportRoot(options?: { timeoutMs?: number
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const el = document.querySelector(BRAINSTORM_EXPORT_ROOT_SELECTOR) as HTMLElement | null;
-    if (el && el.isConnected && el.clientWidth >= 16 && el.clientHeight >= 16) {
+    if (el && el.isConnected && el.offsetWidth >= 16 && el.offsetHeight >= 16) {
       return el;
     }
     await new Promise((r) => setTimeout(r, 48));
@@ -16,22 +17,39 @@ export async function waitForBrainstormExportRoot(options?: { timeoutMs?: number
   return document.querySelector(BRAINSTORM_EXPORT_ROOT_SELECTOR) as HTMLElement | null;
 }
 
-async function captureElement(element: HTMLElement): Promise<HTMLCanvasElement> {
-  const w = element.offsetWidth;
-  const h = element.offsetHeight;
+async function captureElement(source: HTMLElement): Promise<HTMLCanvasElement> {
+  const w = source.offsetWidth;
+  const h = source.offsetHeight;
   if (w < 8 || h < 8) {
     throw new Error('Die Ideenfläche hat noch keine sichtbare Größe.');
   }
-  return html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: '#f1f5f9',
-    logging: false,
-    width: w,
-    height: h,
-    windowWidth: w,
-    windowHeight: h,
-  });
+
+  const clone = createSanitizedExportClone(source);
+  try {
+    return await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: w,
+      height: h,
+      windowWidth: w,
+      windowHeight: h,
+      onclone: (_doc, clonedEl) => {
+        const el = clonedEl as HTMLElement;
+        el.style.background = '#ffffff';
+        el.style.backgroundColor = '#ffffff';
+        el.querySelectorAll('*').forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          node.style.filter = 'none';
+          node.style.backdropFilter = 'none';
+        });
+      },
+    });
+  } finally {
+    removeExportClone(clone);
+  }
 }
 
 export async function downloadBrainstormCanvasPng(element: HTMLElement, fileBasename: string): Promise<void> {

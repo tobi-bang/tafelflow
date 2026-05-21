@@ -89,6 +89,7 @@ create table if not exists public.brainstorm_canvas (
   bg_y double precision not null default 80,
   bg_scale double precision not null default 1 check (bg_scale >= 0.15 and bg_scale <= 4),
   bg_locked boolean not null default false,
+  bg_rotation double precision not null default 0,
   annotations jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
