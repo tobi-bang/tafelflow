@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
+import React, { useState, useEffect, useRef, Fragment, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { rowToBoardObject } from '../lib/dbMap';
 import type { BoardModule, BoardObject, BoardRole, SessionPermissions } from '../types';
@@ -28,6 +28,9 @@ import {
   resolveTextModuleFontPx,
   stepTextModuleFontPx,
 } from '../lib/boardTextModule';
+import { loadBoardLocal, saveBoardLocal } from '../lib/boardLocalPersist';
+
+const BOARD_AUTOSAVE_MS = 750;
 
 export type ToolMode = 'select' | 'pen' | 'eraser' | 'pan';
 
@@ -119,6 +122,10 @@ export default function Board({
   const activePageTabRef = useRef<HTMLButtonElement>(null);
   const activePageTabMobileRef = useRef<HTMLButtonElement>(null);
   const persistTimerRef = useRef<Record<string, number>>({});
+  const pendingModulePatchRef = useRef<Record<string, BoardModule>>({});
+  const localBackupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isCreatingPage, setIsCreatingPage] = useState(false);
   /** Mobil: Bottom-Sheet „Weitere Werkzeuge“ (Farben, Module, Tafel leeren, Seitenverwaltung) */
   const [mobileBoardSheetOpen, setMobileBoardSheetOpen] = useState(false);
@@ -148,14 +155,53 @@ export default function Board({
     if (canManageModules) void publishActivePage(dest.id);
   };
 
+  const flushModuleSaves = useCallback(async () => {
+    const pending = { ...pendingModulePatchRef.current };
+    pendingModulePatchRef.current = {};
+    Object.keys(persistTimerRef.current).forEach((id) => {
+      window.clearTimeout(persistTimerRef.current[id]);
+      delete persistTimerRef.current[id];
+    });
+    const entries = Object.entries(pending);
+    if (entries.length === 0) return;
+    setSaveStatus('saving');
+    try {
+      await Promise.all(
+        entries.map(([id, next]) => supabase.from('board_objects').update({ data: next }).eq('id', id))
+      );
+      setSaveStatus('saved');
+      if (saveFlashRef.current) clearTimeout(saveFlashRef.current);
+      saveFlashRef.current = setTimeout(() => setSaveStatus('idle'), 2200);
+    } catch (e) {
+      console.error(e);
+      setSaveStatus('error');
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     const load = async () => {
+      const local = loadBoardLocal(sessionId);
       const { data, error } = await supabase
         .from('board_objects')
         .select('*')
         .eq('session_id', sessionId)
         .order('created_at', { ascending: true });
-      if (!error && data) setObjects(data.map((r) => rowToBoardObject(r as Record<string, unknown>)));
+      const remote = !error && data ? data.map((r) => rowToBoardObject(r as Record<string, unknown>)) : [];
+      if (local?.objects?.length && (!remote.length || local.savedAt > (remote[0]?.createdAt ?? ''))) {
+        setObjects(local.objects);
+        setActivePageId(local.activePageId || 'default');
+        setPanOffset(local.panOffset ?? { x: 0, y: 0 });
+      } else if (remote.length) {
+        setObjects(remote);
+      }
+      if (local && remote.length) {
+        saveBoardLocal(sessionId, {
+          savedAt: new Date().toISOString(),
+          objects: remote.length ? remote : local.objects,
+          activePageId: local.activePageId,
+          panOffset: local.panOffset,
+        });
+      }
     };
     load();
 
@@ -203,6 +249,36 @@ export default function Board({
       supabase.removeChannel(channel);
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (localBackupTimerRef.current) clearTimeout(localBackupTimerRef.current);
+    localBackupTimerRef.current = setTimeout(() => {
+      saveBoardLocal(sessionId, {
+        savedAt: new Date().toISOString(),
+        objects,
+        activePageId,
+        panOffset,
+      });
+    }, BOARD_AUTOSAVE_MS);
+    return () => {
+      if (localBackupTimerRef.current) clearTimeout(localBackupTimerRef.current);
+    };
+  }, [sessionId, objects, activePageId, panOffset]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushModuleSaves();
+    };
+    const onPageHide = () => void flushModuleSaves();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      void flushModuleSaves();
+      if (saveFlashRef.current) clearTimeout(saveFlashRef.current);
+    };
+  }, [sessionId, flushModuleSaves]);
 
   useEffect(() => {
     if (pages.some((p) => p.id === activePageId)) return;
@@ -468,11 +544,22 @@ export default function Board({
     setObjects((list) =>
       list.map((o) => (o.id === id ? { ...o, data: next as unknown as BoardObject['data'] } : o))
     );
+    pendingModulePatchRef.current[id] = next;
     if (persistTimerRef.current[id]) window.clearTimeout(persistTimerRef.current[id]);
+    setSaveStatus('saving');
     persistTimerRef.current[id] = window.setTimeout(async () => {
+      delete persistTimerRef.current[id];
+      delete pendingModulePatchRef.current[id];
       const { error } = await supabase.from('board_objects').update({ data: next }).eq('id', id);
-      if (error) console.error(error);
-    }, 140);
+      if (error) {
+        console.error(error);
+        setSaveStatus('error');
+      } else {
+        setSaveStatus('saved');
+        if (saveFlashRef.current) clearTimeout(saveFlashRef.current);
+        saveFlashRef.current = setTimeout(() => setSaveStatus('idle'), 2200);
+      }
+    }, BOARD_AUTOSAVE_MS);
   };
 
   const createModule = async (type: string) => {
@@ -1076,6 +1163,20 @@ export default function Board({
             </div>
           </div>
         </div>
+      )}
+
+      {isTeacher && saveStatus !== 'idle' && (
+        <span
+          className={`pointer-events-none absolute right-3 top-14 z-[45] rounded-lg border px-2.5 py-1 text-xs font-medium shadow-sm md:top-3 ${
+            saveStatus === 'saving'
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : saveStatus === 'saved'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-red-200 bg-red-50 text-red-800'
+          }`}
+        >
+          {saveStatus === 'saving' ? 'Speichern…' : saveStatus === 'saved' ? 'Gespeichert' : 'Speicherfehler'}
+        </span>
       )}
 
       <div

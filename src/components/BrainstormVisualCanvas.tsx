@@ -16,26 +16,28 @@ import {
   ZoomOut,
   Layers,
   MousePointer2,
+  Minus,
+  Plus,
+  RotateCw,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import {
-  BRAINSTORM_CANVAS_MIGRATION_HINT,
-  fetchBrainstormCanvas,
-  rowToBrainstormCanvas,
-  upsertBrainstormCanvas,
-} from '../lib/brainstormCanvasDb';
+import { rowToBrainstormCanvas, upsertBrainstormCanvas } from '../lib/brainstormCanvasDb';
 import {
   annotationBounds,
   findAnnotationAt,
   moveAnnotation,
+  normalizeAnnotationBox,
+  resizeAnnotation,
+  rotateAnnotation,
+  scaleAnnotationFromCenter,
 } from '../lib/brainstormCanvasInteraction';
 import {
   BRAINSTORM_CANVAS_HEIGHT,
   BRAINSTORM_CANVAS_WIDTH,
   defaultBrainstormCanvas,
   type BrainstormAnnotation,
-  type BrainstormCanvasState,
   type BrainstormCanvasTool,
+  type ResizeHandleId,
 } from '../lib/brainstormCanvasTypes';
 import {
   BRAINSTORM_ACCEPT,
@@ -47,6 +49,10 @@ import {
   downloadBrainstormCanvasPng,
   waitForBrainstormExportRoot,
 } from '../lib/brainstormExport';
+import { useBrainstormCanvasPersist } from '../hooks/useBrainstormCanvasPersist';
+import { BrainstormResizeHandles } from './brainstorm/BrainstormResizeHandles';
+
+const BG_SELECT_ID = '__background__';
 
 type Props = {
   sessionId: string;
@@ -62,22 +68,15 @@ function clientToCanvas(
   scrollEl: HTMLElement | null
 ): { x: number; y: number } {
   const rect = canvasEl.getBoundingClientRect();
-  const scrollLeft = scrollEl?.scrollLeft ?? 0;
-  const scrollTop = scrollEl?.scrollTop ?? 0;
   return {
-    x: clientX - rect.left + scrollLeft,
-    y: clientY - rect.top + scrollTop,
+    x: clientX - rect.left + (scrollEl?.scrollLeft ?? 0),
+    y: clientY - rect.top + (scrollEl?.scrollTop ?? 0),
   };
 }
 
 function AnnotationSvgRender({ items }: { items: BrainstormAnnotation[] }) {
   return (
-    <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      width={BRAINSTORM_CANVAS_WIDTH}
-      height={BRAINSTORM_CANVAS_HEIGHT}
-      aria-hidden
-    >
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
       <defs>
         <marker id="brainstorm-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
           <path d="M0,0 L8,4 L0,8 Z" fill="#1e293b" />
@@ -86,6 +85,10 @@ function AnnotationSvgRender({ items }: { items: BrainstormAnnotation[] }) {
       {items.map((a) => {
         const stroke = a.color ?? '#1e293b';
         const sw = a.strokeWidth ?? 2;
+        const rot = a.rotation ?? 0;
+        const cx = a.x + (a.w ?? 0) / 2;
+        const cy = a.y + (a.h ?? 0) / 2;
+        const transform = rot ? `rotate(${rot} ${cx} ${cy})` : undefined;
         if (a.kind === 'arrow' && a.x2 != null && a.y2 != null) {
           return (
             <line
@@ -101,41 +104,46 @@ function AnnotationSvgRender({ items }: { items: BrainstormAnnotation[] }) {
           );
         }
         if (a.kind === 'rect' && a.w != null && a.h != null) {
+          const box = normalizeAnnotationBox(a);
           return (
             <rect
               key={a.id}
-              x={Math.min(a.x, a.x + a.w)}
-              y={Math.min(a.y, a.y + a.h)}
-              width={Math.abs(a.w)}
-              height={Math.abs(a.h)}
+              x={box.x}
+              y={box.y}
+              width={box.w}
+              height={box.h}
               fill="none"
               stroke={stroke}
               strokeWidth={sw}
+              transform={transform}
             />
           );
         }
         if (a.kind === 'circle' && a.w != null && a.h != null) {
+          const box = normalizeAnnotationBox(a);
           return (
             <ellipse
               key={a.id}
-              cx={a.x + a.w / 2}
-              cy={a.y + a.h / 2}
-              rx={Math.abs(a.w) / 2}
-              ry={Math.abs(a.h) / 2}
+              cx={box.x + box.w / 2}
+              cy={box.y + box.h / 2}
+              rx={box.w / 2}
+              ry={box.h / 2}
               fill="none"
               stroke={stroke}
               strokeWidth={sw}
+              transform={transform}
             />
           );
         }
         if (a.kind === 'highlight' && a.w != null && a.h != null) {
+          const box = normalizeAnnotationBox(a);
           return (
             <rect
               key={a.id}
-              x={Math.min(a.x, a.x + a.w)}
-              y={Math.min(a.y, a.y + a.h)}
-              width={Math.abs(a.w)}
-              height={Math.abs(a.h)}
+              x={box.x}
+              y={box.y}
+              width={box.w}
+              height={box.h}
               fill="#facc15"
               fillOpacity={0.35}
               stroke="#eab308"
@@ -149,85 +157,75 @@ function AnnotationSvgRender({ items }: { items: BrainstormAnnotation[] }) {
   );
 }
 
-function SelectionOutline() {
+function SaveStatusBadge({ status }: { status: 'idle' | 'saving' | 'saved' | 'error' }) {
+  if (status === 'idle') return null;
+  const label =
+    status === 'saving' ? 'Speichern…' : status === 'saved' ? 'Gespeichert' : 'Speicherfehler';
+  const cls =
+    status === 'saving'
+      ? 'bg-amber-50 text-amber-900 border-amber-200'
+      : status === 'saved'
+        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+        : 'bg-red-50 text-red-800 border-red-200';
   return (
-    <div
-      className="pointer-events-none absolute inset-0 rounded-sm border-2 border-blue-500 ring-2 ring-blue-400/40"
-      aria-hidden
-    />
+    <span
+      className={`pointer-events-none absolute top-2 right-2 z-[60] rounded-lg border px-2.5 py-1 text-xs font-medium shadow-sm ${cls}`}
+    >
+      {label}
+    </span>
   );
 }
 
 export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, children }: Props) {
-  const [canvas, setCanvas] = useState<BrainstormCanvasState>(() => defaultBrainstormCanvas(sessionId));
-  const [tableReady, setTableReady] = useState(true);
+  const {
+    canvas,
+    canvasRef: canvasStateRef,
+    tableReady,
+    saveStatus,
+    statusMsg,
+    setStatusMsg,
+    scheduleSave,
+    flushSave,
+  } = useBrainstormCanvasPersist(sessionId, isTeacher);
+
   const [tool, setTool] = useState<BrainstormCanvasTool>('select');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number; x2: number; y2: number } | null>(null);
   const [arrowStart, setArrowStart] = useState<{ x: number; y: number } | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [bgDisplay, setBgDisplay] = useState({ w: 320, h: 240 });
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bgDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const annDragRef = useRef<{ id: string; startX: number; startY: number; snapshot: BrainstormAnnotation[] } | null>(
     null
   );
+  const resizeRef = useRef<{
+    id: string;
+    handle: ResizeHandleId;
+    startX: number;
+    startY: number;
+    snapshot: BrainstormAnnotation[];
+    proportional: boolean;
+  } | null>(null);
   const drawRef = useRef<{ kind: 'rect' | 'circle' | 'highlight'; startX: number; startY: number } | null>(null);
-  const canvasRefState = useRef(canvas);
-  canvasRefState.current = canvas;
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ dist0: number; snapshot: BrainstormAnnotation | null; scale0: number } | null>(null);
 
-  const selectedAnnotation = selectedId
-    ? canvas.annotations.find((a) => a.id === selectedId) ?? null
-    : null;
+  const selectedAnnotation =
+    selectedId && selectedId !== BG_SELECT_ID
+      ? canvas.annotations.find((a) => a.id === selectedId) ?? null
+      : null;
 
-  const persist = useCallback(
-    (patch: Parameters<typeof upsertBrainstormCanvas>[1]) => {
-      if (!isTeacher || !tableReady) return;
-      void upsertBrainstormCanvas(sessionId, patch).catch((e) => {
-        setStatusMsg(e instanceof Error ? e.message : 'Speichern fehlgeschlagen');
-      });
+  const updateCanvas = useCallback(
+    (fn: (c: typeof canvas) => typeof canvas) => {
+      scheduleSave(fn(canvasStateRef.current));
     },
-    [isTeacher, sessionId, tableReady]
+    [scheduleSave, canvasStateRef]
   );
-
-  const schedulePersist = useCallback(
-    (next: BrainstormCanvasState) => {
-      setCanvas(next);
-      if (!isTeacher || !tableReady) return;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        void upsertBrainstormCanvas(sessionId, {
-          backgroundPath: next.backgroundPath,
-          bgX: next.bgX,
-          bgY: next.bgY,
-          bgScale: next.bgScale,
-          bgLocked: next.bgLocked,
-          annotations: next.annotations,
-        }).catch((e) => {
-          setStatusMsg(e instanceof Error ? e.message : 'Speichern fehlgeschlagen');
-        });
-      }, 320);
-    },
-    [isTeacher, sessionId, tableReady]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchBrainstormCanvas(sessionId).then(({ state, tableMissing }) => {
-      if (cancelled) return;
-      setCanvas(state);
-      setTableReady(!tableMissing);
-      if (tableMissing) setStatusMsg(BRAINSTORM_CANVAS_MIGRATION_HINT);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
 
   useEffect(() => {
     if (!tableReady) return;
@@ -242,14 +240,15 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => {
+          if (saveStatus === 'saving') return;
           if (payload.eventType === 'DELETE') {
-            setCanvas(defaultBrainstormCanvas(sessionId));
+            scheduleSave(defaultBrainstormCanvas(sessionId));
             return;
           }
           const row = payload.new as Record<string, unknown> | undefined;
           if (!row) return;
           const incoming = rowToBrainstormCanvas(row);
-          setCanvas((prev) => {
+          scheduleSave((prev) => {
             const prevTs = Date.parse(prev.updatedAt);
             const nextTs = Date.parse(incoming.updatedAt);
             if (Number.isFinite(prevTs) && Number.isFinite(nextTs) && nextTs < prevTs) return prev;
@@ -261,7 +260,7 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [sessionId, tableReady]);
+  }, [sessionId, tableReady, scheduleSave, saveStatus]);
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -271,56 +270,180 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
       if (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
       if (!selectedId) return;
       e.preventDefault();
-      const next = {
-        ...canvasRefState.current,
-        annotations: canvasRefState.current.annotations.filter((a) => a.id !== selectedId),
-      };
+      if (selectedId === BG_SELECT_ID) return;
+      updateCanvas((c) => ({
+        ...c,
+        annotations: c.annotations.filter((a) => a.id !== selectedId),
+      }));
       setSelectedId(null);
-      schedulePersist(next);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isTeacher, selectedId, schedulePersist]);
-
-  const pushAnnotation = useCallback(
-    (ann: BrainstormAnnotation) => {
-      const next = { ...canvasRefState.current, annotations: [...canvasRefState.current.annotations, ann] };
-      schedulePersist(next);
-      setSelectedId(ann.id);
-    },
-    [schedulePersist]
-  );
-
-  const updateAnnotations = useCallback(
-    (fn: (list: BrainstormAnnotation[]) => BrainstormAnnotation[]) => {
-      const next = { ...canvasRefState.current, annotations: fn(canvasRefState.current.annotations) };
-      schedulePersist(next);
-    },
-    [schedulePersist]
-  );
-
-  const deleteSelected = useCallback(() => {
-    if (!selectedId) return;
-    const next = {
-      ...canvasRefState.current,
-      annotations: canvasRefState.current.annotations.filter((a) => a.id !== selectedId),
-    };
-    setSelectedId(null);
-    schedulePersist(next);
-  }, [selectedId, schedulePersist]);
+  }, [isTeacher, selectedId, updateCanvas]);
 
   const canvasPoint = (e: React.PointerEvent) => {
     const el = canvasRef.current;
-    const vp = viewportRef.current;
     if (!el) return null;
-    return clientToCanvas(e.clientX, e.clientY, el, vp);
+    return clientToCanvas(e.clientX, e.clientY, el, viewportRef.current);
+  };
+
+  const patchAnnotation = (id: string, patch: Partial<BrainstormAnnotation>) => {
+    updateCanvas((c) => ({
+      ...c,
+      annotations: c.annotations.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
+  };
+
+  const deleteSelected = () => {
+    if (!selectedId) return;
+    if (selectedId === BG_SELECT_ID) {
+      setSelectedId(null);
+      return;
+    }
+    updateCanvas((c) => ({
+      ...c,
+      annotations: c.annotations.filter((a) => a.id !== selectedId),
+    }));
+    setSelectedId(null);
+  };
+
+  const handleResizePointerDown = (handle: ResizeHandleId, e: React.PointerEvent) => {
+    if (!selectedId || tool !== 'select') return;
+    e.stopPropagation();
+    const pt = canvasPoint(e);
+    if (!pt) return;
+
+    if (selectedId === BG_SELECT_ID) {
+      resizeRef.current = {
+        id: BG_SELECT_ID,
+        handle,
+        startX: pt.x,
+        startY: pt.y,
+        snapshot: [],
+        proportional: e.shiftKey,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    const ann = canvas.annotations.find((a) => a.id === selectedId);
+    if (!ann) return;
+    resizeRef.current = {
+      id: selectedId,
+      handle,
+      startX: pt.x,
+      startY: pt.y,
+      snapshot: canvas.annotations,
+      proportional: e.shiftKey,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMoveGlobal = (e: React.PointerEvent) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointersRef.current.size === 2 && selectedId && selectedId !== BG_SELECT_ID && tool === 'select') {
+      const pts = [...pointersRef.current.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      if (!pinchRef.current) {
+        const ann = canvas.annotations.find((a) => a.id === selectedId) ?? null;
+        pinchRef.current = { dist0: dist, snapshot: ann, scale0: 1 };
+      } else if (pinchRef.current.snapshot && pinchRef.current.dist0 > 8) {
+        const scale = dist / pinchRef.current.dist0;
+        const next = scaleAnnotationFromCenter(pinchRef.current.snapshot, scale, true);
+        updateCanvas((c) => ({
+          ...c,
+          annotations: c.annotations.map((a) => (a.id === selectedId ? next : a)),
+        }));
+      }
+      return;
+    }
+
+    const resize = resizeRef.current;
+    if (resizeRef.current) {
+      resizeRef.current.proportional = e.shiftKey;
+      const resize = resizeRef.current;
+      const pt = canvasPoint(e);
+      if (!pt) return;
+      const dx = pt.x - resize.startX;
+      const dy = pt.y - resize.startY;
+      if (resize.id === BG_SELECT_ID) {
+        const delta = (dx + dy) / 400;
+        updateCanvas((c) => ({
+          ...c,
+          bgScale: Math.min(4, Math.max(0.15, c.bgScale + delta)),
+        }));
+        return;
+      }
+      const base = resize.snapshot.find((a) => a.id === resize.id);
+      if (!base) return;
+      const next = resizeAnnotation(base, resize.handle, dx, dy, resize.proportional || e.shiftKey);
+      updateCanvas((c) => ({
+        ...c,
+        annotations: c.annotations.map((a) => (a.id === resize.id ? next : a)),
+      }));
+      return;
+    }
+
+    const bgDrag = bgDragRef.current;
+    if (bgDrag && selectedId === BG_SELECT_ID) {
+      const dx = e.clientX - bgDrag.startX;
+      const dy = e.clientY - bgDrag.startY;
+      updateCanvas((c) => ({ ...c, bgX: bgDrag.origX + dx, bgY: bgDrag.origY + dy }));
+      return;
+    }
+
+    const drag = annDragRef.current;
+    if (drag && tool === 'select') {
+      const pt = canvasPoint(e);
+      if (!pt) return;
+      const dx = pt.x - drag.startX;
+      const dy = pt.y - drag.startY;
+      updateCanvas((c) => ({
+        ...c,
+        annotations: drag.snapshot.map((a) => (a.id === drag.id ? moveAnnotation(a, dx, dy) : a)),
+      }));
+    }
+  };
+
+  const finishPointerInteraction = () => {
+    if (resizeRef.current || annDragRef.current || pinchRef.current) {
+      resizeRef.current = null;
+      annDragRef.current = null;
+      pinchRef.current = null;
+      void flushSave();
+    }
+    pointersRef.current.clear();
   };
 
   const handleSelectPointerDown = (e: React.PointerEvent) => {
     if (!isTeacher || tool !== 'select') return;
     if ((e.target as HTMLElement).closest('[data-brainstorm-sticky]')) return;
+    if ((e.target as HTMLElement).closest('[data-resize-handle]')) return;
     const pt = canvasPoint(e);
     if (!pt) return;
+
+    if (canvas.backgroundUrl && !canvas.bgLocked) {
+      const bx = canvas.bgX;
+      const by = canvas.bgY;
+      const bw = bgDisplay.w * canvas.bgScale;
+      const bh = bgDisplay.h * canvas.bgScale;
+      if (pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh) {
+        const hitAnn = findAnnotationAt(canvas.annotations, pt.x, pt.y);
+        if (!hitAnn) {
+          e.stopPropagation();
+          setSelectedId(BG_SELECT_ID);
+          bgDragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            origX: canvas.bgX,
+            origY: canvas.bgY,
+          };
+          (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+          return;
+        }
+      }
+    }
 
     const hit = findAnnotationAt(canvas.annotations, pt.x, pt.y);
     if (hit) {
@@ -335,44 +458,29 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       return;
     }
-
     setSelectedId(null);
   };
 
-  const handleSelectPointerMove = (e: React.PointerEvent) => {
-    const drag = annDragRef.current;
-    if (!drag || tool !== 'select') return;
-    const pt = canvasPoint(e);
-    if (!pt) return;
-    const dx = pt.x - drag.startX;
-    const dy = pt.y - drag.startY;
-    setCanvas((c) => ({
-      ...c,
-      annotations: drag.snapshot.map((a) => (a.id === drag.id ? moveAnnotation(a, dx, dy) : a)),
-    }));
-  };
-
-  const finishAnnotationDrag = () => {
-    if (!annDragRef.current) return;
-    annDragRef.current = null;
-    persist({ annotations: canvasRefState.current.annotations });
-  };
-
   const handleCanvasPointerDown = (e: React.PointerEvent) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!isTeacher) return;
     if (tool === 'select') {
       handleSelectPointerDown(e);
       return;
     }
     if ((e.target as HTMLElement).closest('[data-brainstorm-sticky]')) return;
-    if ((e.target as HTMLElement).closest('[data-brainstorm-annotation]')) return;
     const pt = canvasPoint(e);
     if (!pt) return;
 
     if (tool === 'text') {
       const text = window.prompt('Textfeld:', 'Text') ?? '';
       if (!text.trim()) return;
-      pushAnnotation({ id: crypto.randomUUID(), kind: 'text', x: pt.x, y: pt.y, text: text.trim() });
+      const id = crypto.randomUUID();
+      updateCanvas((c) => ({
+        ...c,
+        annotations: [...c.annotations, { id, kind: 'text', x: pt.x, y: pt.y, text: text.trim(), w: 220, h: 56 }],
+      }));
+      setSelectedId(id);
       setTool('select');
       return;
     }
@@ -382,14 +490,15 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
         setArrowStart({ x: pt.x, y: pt.y });
         return;
       }
-      pushAnnotation({
-        id: crypto.randomUUID(),
-        kind: 'arrow',
-        x: arrowStart.x,
-        y: arrowStart.y,
-        x2: pt.x,
-        y2: pt.y,
-      });
+      const id = crypto.randomUUID();
+      updateCanvas((c) => ({
+        ...c,
+        annotations: [
+          ...c.annotations,
+          { id, kind: 'arrow', x: arrowStart.x, y: arrowStart.y, x2: pt.x, y2: pt.y },
+        ],
+      }));
+      setSelectedId(id);
       setArrowStart(null);
       setTool('select');
       return;
@@ -403,23 +512,8 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     }
   };
 
-  const handleCanvasPointerMove = (e: React.PointerEvent) => {
-    if (tool === 'select') {
-      handleSelectPointerMove(e);
-      return;
-    }
-    if (!drawRef.current) return;
-    const pt = canvasPoint(e);
-    if (!pt) return;
-    const d = drawRef.current;
-    setDraft({ x: d.startX, y: d.startY, x2: pt.x, y2: pt.y });
-  };
-
   const finishDraw = () => {
-    if (annDragRef.current) {
-      finishAnnotationDrag();
-      return;
-    }
+    finishPointerInteraction();
     const d = drawRef.current;
     const dr = draft;
     drawRef.current = null;
@@ -431,73 +525,31 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
       setTool('select');
       return;
     }
-    pushAnnotation({
-      id: crypto.randomUUID(),
-      kind: d.kind,
-      x: dr.x,
-      y: dr.y,
-      w,
-      h,
-    });
+    const id = crypto.randomUUID();
+    updateCanvas((c) => ({
+      ...c,
+      annotations: [...c.annotations, { id, kind: d.kind, x: dr.x, y: dr.y, w, h }],
+    }));
+    setSelectedId(id);
     setTool('select');
-  };
-
-  const handleBgPointerDown = (e: React.PointerEvent) => {
-    if (!isTeacher || canvas.bgLocked || !canvas.backgroundUrl || tool !== 'select') return;
-    e.stopPropagation();
-    setSelectedId(null);
-    bgDragRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: canvas.bgX,
-      origY: canvas.bgY,
-    };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
-
-  const handleBgPointerMove = (e: React.PointerEvent) => {
-    const drag = bgDragRef.current;
-    if (!drag) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    setCanvas((c) => ({ ...c, bgX: drag.origX + dx, bgY: drag.origY + dy }));
-  };
-
-  const handleBgPointerUp = () => {
-    if (!bgDragRef.current) return;
-    bgDragRef.current = null;
-    const c = canvasRefState.current;
-    persist({ bgX: c.bgX, bgY: c.bgY });
   };
 
   const onUpload = async (file: File) => {
     setUploadBusy(true);
-    setStatusMsg(tableReady ? null : BRAINSTORM_CANVAS_MIGRATION_HINT);
     try {
       const oldPath = canvas.backgroundPath;
       const { path, publicUrl } = await uploadBrainstormBackground(sessionId, file);
-      const next: BrainstormCanvasState = {
-        ...canvasRefState.current,
+      updateCanvas((c) => ({
+        ...c,
         backgroundPath: path,
         backgroundUrl: publicUrl,
         bgX: 80,
         bgY: 80,
         bgScale: 1,
         bgLocked: false,
-      };
-      setCanvas(next);
-      if (tableReady) {
-        await upsertBrainstormCanvas(sessionId, {
-          backgroundPath: path,
-          bgX: next.bgX,
-          bgY: next.bgY,
-          bgScale: next.bgScale,
-          bgLocked: false,
-        });
-      }
-      if (oldPath && oldPath !== path) {
-        void removeBrainstormBackgroundFile(oldPath).catch(() => undefined);
-      }
+      }));
+      if (tableReady) await flushSave();
+      if (oldPath && oldPath !== path) void removeBrainstormBackgroundFile(oldPath).catch(() => undefined);
     } catch (err) {
       setStatusMsg(err instanceof Error ? err.message : 'Upload fehlgeschlagen');
     } finally {
@@ -508,38 +560,17 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
   const removeTemplate = async () => {
     if (!window.confirm('Vorlage und Hintergrundbild wirklich entfernen?')) return;
     const path = canvas.backgroundPath;
-    const next = defaultBrainstormCanvas(sessionId);
-    setCanvas(next);
+    updateCanvas(() => defaultBrainstormCanvas(sessionId));
     setSelectedId(null);
-    if (tableReady) {
-      await upsertBrainstormCanvas(sessionId, {
-        backgroundPath: null,
-        bgX: next.bgX,
-        bgY: next.bgY,
-        bgScale: next.bgScale,
-        bgLocked: false,
-        annotations: [],
-      });
-    }
+    if (tableReady) await flushSave();
     if (path) void removeBrainstormBackgroundFile(path).catch(() => undefined);
   };
 
-  const adjustScale = (delta: number) => {
-    const next = {
-      ...canvasRefState.current,
-      bgScale: Math.min(4, Math.max(0.15, canvasRefState.current.bgScale + delta)),
-    };
-    schedulePersist(next);
-  };
-
-  const toggleLock = () => {
-    const next = { ...canvasRefState.current, bgLocked: !canvasRefState.current.bgLocked };
-    schedulePersist(next);
-  };
+  const svgAnnotations = canvas.annotations.filter((a) => a.kind !== 'text');
+  const textAnnotations = canvas.annotations.filter((a) => a.kind === 'text');
 
   const runExport = async (kind: 'png' | 'pdf') => {
     setExportBusy(true);
-    setStatusMsg(null);
     try {
       const el = await waitForBrainstormExportRoot();
       if (!el) throw new Error('Ideenfläche nicht gefunden.');
@@ -553,15 +584,55 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
     }
   };
 
-  const svgAnnotations = canvas.annotations.filter((a) => a.kind !== 'text');
-  const textAnnotations = canvas.annotations.filter((a) => a.kind === 'text');
-  const shapeAnnotations = canvas.annotations.filter((a) => a.kind !== 'text');
+  const renderSelectionHandles = () => {
+    if (!isTeacher || tool !== 'select' || !selectedId) return null;
+    if (selectedId === BG_SELECT_ID && canvas.backgroundUrl) {
+      const w = bgDisplay.w * canvas.bgScale;
+      const h = bgDisplay.h * canvas.bgScale;
+      return (
+        <BrainstormResizeHandles
+          left={canvas.bgX}
+          top={canvas.bgY}
+          width={w}
+          height={h}
+          onHandlePointerDown={handleResizePointerDown}
+        />
+      );
+    }
+    if (!selectedAnnotation) return null;
+    if (selectedAnnotation.kind === 'arrow' && selectedAnnotation.x2 != null && selectedAnnotation.y2 != null) {
+      return (
+        <BrainstormResizeHandles
+          left={0}
+          top={0}
+          width={0}
+          height={0}
+          arrowMode
+          arrowStart={{ x: selectedAnnotation.x, y: selectedAnnotation.y }}
+          arrowEnd={{ x: selectedAnnotation.x2, y: selectedAnnotation.y2 }}
+          onHandlePointerDown={handleResizePointerDown}
+        />
+      );
+    }
+    const box = normalizeAnnotationBox(selectedAnnotation);
+    return (
+      <BrainstormResizeHandles
+        left={box.x}
+        top={box.y}
+        width={box.w}
+        height={box.h}
+        onHandlePointerDown={handleResizePointerDown}
+      />
+    );
+  };
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-slate-100">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-slate-100">
+      {isTeacher && <SaveStatusBadge status={saveStatus} />}
+
       {isTeacher && (
         <div className="z-50 shrink-0 border-b border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur-sm sm:px-3">
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch]">
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
             <input
               ref={fileRef}
               type="file"
@@ -576,40 +647,47 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             <ToolbarBtn title="Vorlage hochladen" disabled={uploadBusy} onClick={() => fileRef.current?.click()}>
               <ImagePlus className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title={canvas.bgLocked ? 'Vorlage entsperren' : 'Vorlage sperren'} onClick={toggleLock}>
+            <ToolbarBtn title={canvas.bgLocked ? 'Vorlage entsperren' : 'Vorlage sperren'} onClick={() => updateCanvas((c) => ({ ...c, bgLocked: !c.bgLocked }))}>
               {canvas.bgLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
             </ToolbarBtn>
-            <ToolbarBtn title="Verkleinern" onClick={() => adjustScale(-0.1)} disabled={!canvas.backgroundUrl}>
+            <ToolbarBtn title="Verkleinern" onClick={() => updateCanvas((c) => ({ ...c, bgScale: Math.max(0.15, c.bgScale - 0.1) }))} disabled={!canvas.backgroundUrl}>
               <ZoomOut className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="Vergrößern" onClick={() => adjustScale(0.1)} disabled={!canvas.backgroundUrl}>
+            <ToolbarBtn title="Vergrößern" onClick={() => updateCanvas((c) => ({ ...c, bgScale: Math.min(4, c.bgScale + 0.1) }))} disabled={!canvas.backgroundUrl}>
               <ZoomIn className="h-4 w-4" />
             </ToolbarBtn>
             <span className="mx-0.5 h-5 w-px shrink-0 bg-slate-200" />
-            <ToolbarBtn
-              title="Auswahl (Entf = löschen)"
-              active={tool === 'select'}
-              onClick={() => {
-                setTool('select');
-                setArrowStart(null);
-              }}
-            >
+            <ToolbarBtn title="Auswahl" active={tool === 'select'} onClick={() => { setTool('select'); setArrowStart(null); }}>
               <MousePointer2 className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="Auswahl löschen" disabled={!selectedId} onClick={deleteSelected}>
-              <Trash2 className="h-4 w-4" />
-            </ToolbarBtn>
+            {selectedId && (
+              <>
+                <ToolbarBtn title="Verkleinern" onClick={() => {
+                  if (selectedId === BG_SELECT_ID) updateCanvas((c) => ({ ...c, bgScale: Math.max(0.15, c.bgScale * 0.9) }));
+                  else if (selectedAnnotation) patchAnnotation(selectedId, scaleAnnotationFromCenter(selectedAnnotation, 0.9, true));
+                }}>
+                  <Minus className="h-4 w-4" />
+                </ToolbarBtn>
+                <ToolbarBtn title="Vergrößern" onClick={() => {
+                  if (selectedId === BG_SELECT_ID) updateCanvas((c) => ({ ...c, bgScale: Math.min(4, c.bgScale * 1.1) }));
+                  else if (selectedAnnotation) patchAnnotation(selectedId, scaleAnnotationFromCenter(selectedAnnotation, 1.1, true));
+                }}>
+                  <Plus className="h-4 w-4" />
+                </ToolbarBtn>
+                <ToolbarBtn title="Drehen +15°" disabled={selectedId === BG_SELECT_ID} onClick={() => {
+                  if (selectedAnnotation) patchAnnotation(selectedId, rotateAnnotation(selectedAnnotation, 15));
+                }}>
+                  <RotateCw className="h-4 w-4" />
+                </ToolbarBtn>
+                <ToolbarBtn title="Auswahl löschen" onClick={deleteSelected}>
+                  <Trash2 className="h-4 w-4" />
+                </ToolbarBtn>
+              </>
+            )}
             <ToolbarBtn title="Textfeld" active={tool === 'text'} onClick={() => setTool('text')}>
               <Type className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn
-              title="Pfeil (2× klicken)"
-              active={tool === 'arrow'}
-              onClick={() => {
-                setTool('arrow');
-                setArrowStart(null);
-              }}
-            >
+            <ToolbarBtn title="Pfeil" active={tool === 'arrow'} onClick={() => { setTool('arrow'); setArrowStart(null); }}>
               <ArrowRight className="h-4 w-4" />
             </ToolbarBtn>
             <ToolbarBtn title="Rechteck" active={tool === 'rect'} onClick={() => setTool('rect')}>
@@ -630,38 +708,24 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             <ToolbarBtn title="Vorlage entfernen" onClick={() => void removeTemplate()} disabled={!canvas.backgroundPath}>
               <Trash2 className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="PNG exportieren" disabled={exportBusy} onClick={() => void runExport('png')}>
+            <ToolbarBtn title="PNG" disabled={exportBusy} onClick={() => void runExport('png')}>
               <FileImage className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="PDF exportieren" disabled={exportBusy} onClick={() => void runExport('pdf')}>
+            <ToolbarBtn title="PDF" disabled={exportBusy} onClick={() => void runExport('pdf')}>
               <FileText className="h-4 w-4" />
             </ToolbarBtn>
-            <ToolbarBtn title="Screenshot (PNG)" disabled={exportBusy} onClick={() => void runExport('png')}>
+            <ToolbarBtn title="Screenshot" disabled={exportBusy} onClick={() => void runExport('png')}>
               <Download className="h-4 w-4" />
             </ToolbarBtn>
           </div>
           {statusMsg && <p className="mt-1 truncate px-1 text-xs text-amber-800">{statusMsg}</p>}
-          {tool === 'select' && selectedAnnotation && (
-            <p className="mt-0.5 px-1 text-xs text-slate-500">
-              Ausgewählt: {selectedAnnotation.kind} — ziehen zum Verschieben, Entf oder Papierkorb zum Löschen
-            </p>
-          )}
-          {arrowStart && tool === 'arrow' && (
-            <p className="mt-0.5 px-1 text-xs text-slate-500">Pfeil: Zielpunkt auf der Fläche anklicken</p>
-          )}
-          {!tableReady && (
-            <p className="mt-0.5 px-1 text-xs font-medium text-red-700">
-              Speichern deaktiviert, bis Migration 017 ausgeführt ist.
-            </p>
-          )}
         </div>
       )}
 
-      <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto touch-pan-x touch-pan-y">
+      <div ref={viewportRef} className="relative min-h-0 flex-1 overflow-auto touch-pan-x touch-pan-y">
         <div
           ref={canvasRef}
           data-brainstorm-export-root
-          data-brainstorm-canvas-surface
           className="relative bg-slate-100"
           style={{
             width: BRAINSTORM_CANVAS_WIDTH,
@@ -670,9 +734,25 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             minHeight: BRAINSTORM_CANVAS_HEIGHT,
           }}
           onPointerDown={handleCanvasPointerDown}
-          onPointerMove={handleCanvasPointerMove}
-          onPointerUp={finishDraw}
-          onPointerCancel={finishDraw}
+          onPointerMove={handlePointerMoveGlobal}
+          onPointerUp={(e) => {
+            bgDragRef.current = null;
+            finishDraw();
+            try {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            } catch {
+              /* ok */
+            }
+          }}
+          onPointerCancel={(e) => {
+            bgDragRef.current = null;
+            finishDraw();
+            try {
+              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+            } catch {
+              /* ok */
+            }
+          }}
         >
           {canvas.backgroundUrl && (
             <div
@@ -689,74 +769,58 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
                 src={canvas.backgroundUrl}
                 alt=""
                 draggable={false}
-                className="max-w-none rounded-sm shadow-sm"
-                style={{
-                  maxHeight: BRAINSTORM_CANVAS_HEIGHT * 0.95,
-                  pointerEvents:
-                    isTeacher && !canvas.bgLocked && tool === 'select' ? 'auto' : 'none',
-                  cursor: isTeacher && !canvas.bgLocked && tool === 'select' ? 'grab' : 'default',
-                }}
+                className={`max-w-none rounded-sm shadow-sm ${selectedId === BG_SELECT_ID ? 'ring-2 ring-blue-500' : ''}`}
+                style={{ maxHeight: BRAINSTORM_CANVAS_HEIGHT * 0.95, pointerEvents: 'none' }}
                 crossOrigin="anonymous"
-                onPointerDown={handleBgPointerDown}
-                onPointerMove={handleBgPointerMove}
-                onPointerUp={handleBgPointerUp}
-                onPointerCancel={handleBgPointerUp}
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  setBgDisplay({ w: img.offsetWidth, h: img.offsetHeight });
+                }}
               />
             </div>
           )}
 
           <AnnotationSvgRender items={svgAnnotations} />
 
-          {/* Trefferflächen + Text (über Hintergrund, unter Stickies) */}
           <div className="absolute inset-0" style={{ zIndex: 6 }}>
-            {shapeAnnotations.map((a) => {
-              const b = annotationBounds(a);
-              const w = b.right - b.left;
-              const h = b.bottom - b.top;
+            {svgAnnotations.map((a) => {
+              const box = normalizeAnnotationBox(a);
               const selected = selectedId === a.id;
               return (
                 <div
-                  key={a.id}
+                  key={`hit-${a.id}`}
                   data-brainstorm-annotation={a.id}
                   className={`absolute touch-none ${isTeacher && tool === 'select' ? 'cursor-move' : 'pointer-events-none'}`}
-                  style={{ left: b.left, top: b.top, width: w, height: h }}
+                  style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
                   onPointerDown={(e) => {
                     if (tool !== 'select' || !isTeacher) return;
                     e.stopPropagation();
                     setSelectedId(a.id);
                     const pt = canvasPoint(e);
                     if (!pt) return;
-                    annDragRef.current = {
-                      id: a.id,
-                      startX: pt.x,
-                      startY: pt.y,
-                      snapshot: canvasRefState.current.annotations,
-                    };
+                    annDragRef.current = { id: a.id, startX: pt.x, startY: pt.y, snapshot: canvas.annotations };
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                 >
-                  {selected && <SelectionOutline />}
+                  {selected && tool === 'select' && <div className="pointer-events-none absolute inset-0 rounded-sm border-2 border-blue-500/80" />}
                 </div>
               );
             })}
             {textAnnotations.map((a) => {
+              const box = normalizeAnnotationBox(a);
               const selected = selectedId === a.id;
               return (
                 <div
                   key={a.id}
                   data-brainstorm-annotation={a.id}
-                  className={`absolute max-w-[280px] rounded-lg border bg-white/95 px-3 py-2 text-base font-medium text-slate-900 shadow-sm touch-none ${
+                  className={`absolute touch-none rounded-lg border bg-white/95 px-3 py-2 text-base font-medium text-slate-900 shadow-sm ${
                     selected ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-slate-300/80'
                   } ${isTeacher && tool === 'select' ? 'cursor-move' : ''}`}
-                  style={{ left: a.x, top: a.y }}
-                  contentEditable={isTeacher && tool === 'select'}
+                  style={{ left: box.x, top: box.y, width: box.w, minHeight: box.h }}
+                  contentEditable={isTeacher && tool === 'select' && selected}
                   suppressContentEditableWarning
                   onBlur={(e) =>
-                    updateAnnotations((list) =>
-                      list.map((x) =>
-                        x.id === a.id ? { ...x, text: (e.currentTarget.textContent ?? '').trim() || 'Text' } : x
-                      )
-                    )
+                    patchAnnotation(a.id, { text: (e.currentTarget.textContent ?? '').trim() || 'Text' })
                   }
                   onPointerDown={(e) => {
                     if (tool !== 'select' || !isTeacher) return;
@@ -764,12 +828,7 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
                     setSelectedId(a.id);
                     const pt = canvasPoint(e);
                     if (!pt) return;
-                    annDragRef.current = {
-                      id: a.id,
-                      startX: pt.x,
-                      startY: pt.y,
-                      snapshot: canvasRefState.current.annotations,
-                    };
+                    annDragRef.current = { id: a.id, startX: pt.x, startY: pt.y, snapshot: canvas.annotations };
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                 >
@@ -779,47 +838,20 @@ export function BrainstormVisualCanvas({ sessionId, isTeacher, onAddHeading, chi
             })}
           </div>
 
+          {renderSelectionHandles()}
+
           {draft && (
             <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ zIndex: 7 }} aria-hidden>
-              {drawRef.current?.kind === 'highlight' ? (
-                <rect
-                  x={Math.min(draft.x, draft.x2)}
-                  y={Math.min(draft.y, draft.y2)}
-                  width={Math.abs(draft.x2 - draft.x)}
-                  height={Math.abs(draft.y2 - draft.y)}
-                  fill="#facc15"
-                  fillOpacity={0.35}
-                  stroke="#eab308"
-                />
-              ) : drawRef.current?.kind === 'circle' ? (
-                <ellipse
-                  cx={(draft.x + draft.x2) / 2}
-                  cy={(draft.y + draft.y2) / 2}
-                  rx={Math.abs(draft.x2 - draft.x) / 2}
-                  ry={Math.abs(draft.y2 - draft.y) / 2}
-                  fill="none"
-                  stroke="#1e293b"
-                  strokeWidth={2}
-                />
-              ) : (
-                <rect
-                  x={Math.min(draft.x, draft.x2)}
-                  y={Math.min(draft.y, draft.y2)}
-                  width={Math.abs(draft.x2 - draft.x)}
-                  height={Math.abs(draft.y2 - draft.y)}
-                  fill="none"
-                  stroke="#1e293b"
-                  strokeWidth={2}
-                />
-              )}
+              <rect
+                x={Math.min(draft.x, draft.x2)}
+                y={Math.min(draft.y, draft.y2)}
+                width={Math.abs(draft.x2 - draft.x)}
+                height={Math.abs(draft.y2 - draft.y)}
+                fill="none"
+                stroke="#1e293b"
+                strokeWidth={2}
+              />
             </svg>
-          )}
-
-          {arrowStart && tool === 'arrow' && (
-            <div
-              className="pointer-events-none absolute h-3 w-3 rounded-full bg-blue-600 ring-2 ring-white"
-              style={{ left: arrowStart.x - 6, top: arrowStart.y - 6, zIndex: 7 }}
-            />
           )}
 
           <div className="pointer-events-none absolute inset-0" style={{ zIndex: 10 }}>
@@ -851,9 +883,7 @@ function ToolbarBtn({
       disabled={disabled}
       onClick={onClick}
       className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors ${
-        active
-          ? 'border-blue-600 bg-blue-600 text-white'
-          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        active ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
       } disabled:opacity-40`}
     >
       {children}

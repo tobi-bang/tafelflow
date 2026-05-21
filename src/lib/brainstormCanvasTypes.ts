@@ -15,7 +15,23 @@ export type BrainstormAnnotation = {
   text?: string;
   color?: string;
   strokeWidth?: number;
+  /** Grad, für Export / spätere Rotation */
+  rotation?: number;
 };
+
+export type ResizeHandleId =
+  | 'nw'
+  | 'n'
+  | 'ne'
+  | 'e'
+  | 'se'
+  | 's'
+  | 'sw'
+  | 'w'
+  | 'start'
+  | 'end';
+
+export const BRAINSTORM_AUTOSAVE_MS = 750;
 
 export type BrainstormCanvasState = {
   sessionId: string;
@@ -79,6 +95,7 @@ export function parseAnnotations(raw: unknown): BrainstormAnnotation[] {
       text: typeof o.text === 'string' ? o.text : undefined,
       color: typeof o.color === 'string' ? o.color : undefined,
       strokeWidth: Number.isFinite(Number(o.strokeWidth)) ? Number(o.strokeWidth) : undefined,
+      rotation: Number.isFinite(Number(o.rotation)) ? Number(o.rotation) : undefined,
     });
   }
   return out;

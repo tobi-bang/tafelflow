@@ -76,3 +76,17 @@ export async function upsertBrainstormCanvas(sessionId: string, patch: Brainstor
     throw new Error(error.message);
   }
 }
+
+export async function persistBrainstormCanvasState(
+  sessionId: string,
+  state: BrainstormCanvasState
+): Promise<void> {
+  await upsertBrainstormCanvas(sessionId, {
+    backgroundPath: state.backgroundPath,
+    bgX: state.bgX,
+    bgY: state.bgY,
+    bgScale: state.bgScale,
+    bgLocked: state.bgLocked,
+    annotations: state.annotations,
+  });
+}

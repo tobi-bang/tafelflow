@@ -1,4 +1,4 @@
-import type { BrainstormAnnotation } from './brainstormCanvasTypes';
+import type { BrainstormAnnotation, ResizeHandleId } from './brainstormCanvasTypes';
 
 const HIT_PAD = 10;
 
@@ -72,6 +72,127 @@ export function moveAnnotation(a: BrainstormAnnotation, dx: number, dy: number):
   if (a.x2 != null) next.x2 = a.x2 + dx;
   if (a.y2 != null) next.y2 = a.y2 + dy;
   return next;
+}
+
+export function normalizeAnnotationBox(a: BrainstormAnnotation): { x: number; y: number; w: number; h: number } {
+  if (a.kind === 'text') {
+    return { x: a.x, y: a.y, w: a.w ?? 220, h: a.h ?? 56 };
+  }
+  const w = a.w ?? 80;
+  const h = a.h ?? 80;
+  return {
+    x: w < 0 ? a.x + w : a.x,
+    y: h < 0 ? a.y + h : a.y,
+    w: Math.max(12, Math.abs(w)),
+    h: Math.max(12, Math.abs(h)),
+  };
+}
+
+export function resizeAnnotation(
+  a: BrainstormAnnotation,
+  handle: ResizeHandleId,
+  dx: number,
+  dy: number,
+  proportional: boolean
+): BrainstormAnnotation {
+  if (a.kind === 'arrow' && a.x2 != null && a.y2 != null) {
+    if (handle === 'start') return { ...a, x: a.x + dx, y: a.y + dy };
+    if (handle === 'end') return { ...a, x2: a.x2 + dx, y2: a.y2 + dy };
+    return a;
+  }
+
+  const box = normalizeAnnotationBox(a);
+  let x = box.x;
+  let y = box.y;
+  let w = box.w;
+  let h = box.h;
+
+  if (handle === 'se') {
+    w += dx;
+    h += dy;
+  } else if (handle === 'e') {
+    w += dx;
+  } else if (handle === 's') {
+    h += dy;
+  } else if (handle === 'sw') {
+    x += dx;
+    w -= dx;
+    h += dy;
+  } else if (handle === 'w') {
+    x += dx;
+    w -= dx;
+  } else if (handle === 'ne') {
+    y += dy;
+    w += dx;
+    h -= dy;
+  } else if (handle === 'n') {
+    y += dy;
+    h -= dy;
+  } else if (handle === 'nw') {
+    x += dx;
+    y += dy;
+    w -= dx;
+    h -= dy;
+  }
+
+  w = Math.max(12, w);
+  h = Math.max(12, h);
+
+  if (proportional && a.kind !== 'text') {
+    const ratio = box.w / Math.max(box.h, 1);
+    if (handle === 'e' || handle === 'w') h = w / ratio;
+    else if (handle === 'n' || handle === 's') w = h * ratio;
+    else {
+      const s = Math.max(Math.abs(dx), Math.abs(dy));
+      const signW = dx >= 0 ? 1 : -1;
+      w = Math.max(12, box.w + signW * s);
+      h = Math.max(12, w / ratio);
+    }
+  }
+
+  if (a.kind === 'text') {
+    return { ...a, x, y, w, h };
+  }
+  return { ...a, x, y, w, h };
+}
+
+export function rotateAnnotation(a: BrainstormAnnotation, deltaDeg: number): BrainstormAnnotation {
+  const r = (a.rotation ?? 0) + deltaDeg;
+  return { ...a, rotation: ((r % 360) + 360) % 360 };
+}
+
+export function scaleAnnotationFromCenter(
+  a: BrainstormAnnotation,
+  scale: number,
+  proportional: boolean
+): BrainstormAnnotation {
+  const box = normalizeAnnotationBox(a);
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  let nw = box.w * scale;
+  let nh = box.h * scale;
+  if (proportional) {
+    const ratio = box.w / Math.max(box.h, 1);
+    nh = nw / ratio;
+  }
+  nw = Math.max(12, nw);
+  nh = Math.max(12, nh);
+  const nx = cx - nw / 2;
+  const ny = cy - nh / 2;
+  if (a.kind === 'arrow' && a.x2 != null && a.y2 != null) {
+    const mx = (a.x + a.x2) / 2;
+    const my = (a.y + a.y2) / 2;
+    const half = (Math.hypot(a.x2 - a.x, a.y2 - a.y) / 2) * scale;
+    const ang = Math.atan2(a.y2 - a.y, a.x2 - a.x);
+    return {
+      ...a,
+      x: mx - Math.cos(ang) * half,
+      y: my - Math.sin(ang) * half,
+      x2: mx + Math.cos(ang) * half,
+      y2: my + Math.sin(ang) * half,
+    };
+  }
+  return { ...a, x: nx, y: ny, w: nw, h: nh };
 }
 
 export function isBrainstormCanvasTableMissing(message: string): boolean {
