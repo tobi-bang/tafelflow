@@ -1,6 +1,11 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { createSanitizedExportClone, removeExportClone } from './brainstormExportSanitize';
+import {
+  buildSanitizedExportClone,
+  sanitizeClonedSubtree,
+  stripDocumentStyles,
+  waitForExportImages,
+} from './brainstormExportSanitize';
 
 export const BRAINSTORM_EXPORT_ROOT_SELECTOR = '[data-brainstorm-export-root]';
 
@@ -17,14 +22,53 @@ export async function waitForBrainstormExportRoot(options?: { timeoutMs?: number
   return document.querySelector(BRAINSTORM_EXPORT_ROOT_SELECTOR) as HTMLElement | null;
 }
 
+function createIsolatedExportFrame(width: number, height: number): HTMLIFrameElement {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.setAttribute('title', 'export');
+  iframe.style.cssText = [
+    'position:fixed',
+    'left:-32000px',
+    'top:0',
+    `width:${width}px`,
+    `height:${height}px`,
+    'border:0',
+    'opacity:0',
+    'pointer-events:none',
+    'visibility:hidden',
+  ].join(';');
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument;
+  if (!doc) throw new Error('Export-iframe konnte nicht erstellt werden.');
+  doc.open();
+  doc.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#fff;overflow:hidden;width:${width}px;height:${height}px;"></body></html>`
+  );
+  doc.close();
+  stripDocumentStyles(doc);
+  return iframe;
+}
+
 async function captureElement(source: HTMLElement): Promise<HTMLCanvasElement> {
-  const w = source.offsetWidth;
-  const h = source.offsetHeight;
+  const w = source.offsetWidth || source.scrollWidth;
+  const h = source.offsetHeight || source.scrollHeight;
   if (w < 8 || h < 8) {
     throw new Error('Die Ideenfläche hat noch keine sichtbare Größe.');
   }
 
-  const clone = createSanitizedExportClone(source);
+  const iframe = createIsolatedExportFrame(w, h);
+  const idoc = iframe.contentDocument!;
+
+  const clone = buildSanitizedExportClone(source);
+  clone.style.width = `${w}px`;
+  clone.style.height = `${h}px`;
+  clone.style.minWidth = `${w}px`;
+  clone.style.minHeight = `${h}px`;
+  idoc.body.appendChild(clone);
+  stripDocumentStyles(idoc);
+
+  await waitForExportImages(clone);
+
   try {
     return await html2canvas(clone, {
       scale: 2,
@@ -36,11 +80,14 @@ async function captureElement(source: HTMLElement): Promise<HTMLCanvasElement> {
       height: h,
       windowWidth: w,
       windowHeight: h,
-      onclone: (_doc, clonedEl) => {
+      foreignObjectRendering: false,
+      onclone: (clonedDoc, clonedEl) => {
+        stripDocumentStyles(clonedDoc);
         const el = clonedEl as HTMLElement;
         el.style.background = '#ffffff';
         el.style.backgroundColor = '#ffffff';
-        el.querySelectorAll('*').forEach((node) => {
+        sanitizeClonedSubtree(el, clone);
+        clonedDoc.querySelectorAll('*').forEach((node) => {
           if (!(node instanceof HTMLElement)) return;
           node.style.filter = 'none';
           node.style.backdropFilter = 'none';
@@ -48,7 +95,7 @@ async function captureElement(source: HTMLElement): Promise<HTMLCanvasElement> {
       },
     });
   } finally {
-    removeExportClone(clone);
+    iframe.remove();
   }
 }
 

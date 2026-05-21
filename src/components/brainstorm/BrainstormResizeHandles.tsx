@@ -43,7 +43,7 @@ function HandleDot({
       type="button"
       aria-label={`Griff ${handle}`}
       data-resize-handle={handle}
-      className="absolute z-20 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-600 shadow-md touch-none"
+      className="absolute z-20 h-5 w-5 min-h-[22px] min-w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-600 shadow-md touch-none sm:h-4 sm:w-4 sm:min-h-0 sm:min-w-0"
       style={{ ...style, cursor: CURSOR[handle] }}
       onPointerDown={(e) => {
         e.stopPropagation();
